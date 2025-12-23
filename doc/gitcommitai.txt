@@ -1,0 +1,240 @@
+*gitcommitai.txt*  AI-powered Git commit message generation for Neovim
+
+Author:  Chmouel Boudjnah
+License: MIT
+
+================================================================================
+CONTENTS                                                  *gitcommitai-contents*
+
+    1. Introduction ............................ |gitcommitai-introduction|
+    2. Requirements ............................ |gitcommitai-requirements|
+    3. Installation ............................ |gitcommitai-installation|
+    4. Configuration ........................... |gitcommitai-configuration|
+    5. Usage ................................... |gitcommitai-usage|
+    6. Keymaps ................................. |gitcommitai-keymaps|
+    7. Functions ............................... |gitcommitai-functions|
+    8. License ................................. |gitcommitai-license|
+
+================================================================================
+1. INTRODUCTION                                       *gitcommitai-introduction*
+
+gitcommitai.nvim is a Neovim plugin that uses AI to automatically generate
+well-formatted Git commit messages following conventional commit standards.
+
+Features:
+  • AI-powered commit message generation via aichat
+  • Conventional commit type selection
+  • Automatic ticket extraction from branch names
+  • Smart text wrapping and formatting
+  • AI tool trailer management
+  • Real-time subject line length indicator
+  • Undo/redo support for message editing
+
+================================================================================
+2. REQUIREMENTS                                       *gitcommitai-requirements*
+
+  • Neovim >= 0.9.0
+  • aichat CLI tool (https://github.com/sigoden/aichat)
+  • Git with interpret-trailers support
+  • fmt command (for text wrapping)
+
+================================================================================
+3. INSTALLATION                                       *gitcommitai-installation*
+
+Using lazy.nvim:
+>lua
+    {
+      "yourusername/gitcommitai.nvim",
+      ft = "gitcommit",
+      opts = {
+        model = "gemini:gemini-2.5-flash-lite",
+        role = "gitcommit",
+      },
+    }
+<
+
+Using packer.nvim:
+>lua
+    use {
+      "yourusername/gitcommitai.nvim",
+      ft = "gitcommit",
+      config = function()
+        require("gitcommitai").setup({
+          model = "gemini:gemini-2.5-flash-lite",
+          role = "gitcommit",
+        })
+      end,
+    }
+<
+
+================================================================================
+4. CONFIGURATION                                     *gitcommitai-configuration*
+
+Setup function:                                        *gitcommitai.setup()*
+
+    require("gitcommitai").setup({opts})
+
+    Configure the plugin. If no options are provided, defaults will be used.
+
+    Parameters:~
+        {opts} (table|nil) Configuration table with the following keys:
+
+        • model (string): aichat model to use
+          Default: "gemini:gemini-2.5-flash-lite"
+
+        • role (string): aichat role name
+          Default: "gitcommit"
+
+        • subject_warn_length (number): Subject line warning threshold
+          Default: 50
+
+        • subject_error_length (number): Subject line error threshold
+          Default: 72
+
+        • ticket_patterns (table): Patterns for extracting tickets from
+          branch names
+          Default: {
+            "(%a+%-%d%d%d+)",  -- JIRA-123
+            "(%a+_%d%d%d+)",   -- JIRA_123
+            "#(%d+)",          -- #123
+          }
+
+        • jira_base_url (string): Base URL for Jira tickets
+          Default: "https://issues.redhat.com/browse"
+
+        • jira_uppercase (boolean): Convert ticket to uppercase
+          Default: true
+
+        • trailers (table): AI tool trailers
+          Default: {
+            { name = "Claude", line = "Co-Authored-By: Claude ..." },
+            { name = "GitHub Copilot", line = "AI-assisted-by: ..." },
+            ...
+          }
+
+        • conventional_commits (table): Conventional commit types
+          Default: {
+            { type = "feat", desc = "A new feature" },
+            { type = "fix", desc = "A bug fix" },
+            ...
+          }
+
+Example configuration:
+>lua
+    require("gitcommitai").setup({
+      model = "claude:claude-3-5-sonnet-20241022",
+      role = "gitcommit",
+      subject_warn_length = 60,
+      jira_base_url = "https://jira.mycompany.com/browse",
+      ticket_patterns = {
+        "(%a+%-%d+)",  -- Allow any number of digits
+      },
+    })
+<
+
+================================================================================
+5. USAGE                                                     *gitcommitai-usage*
+
+AUTOMATIC GENERATION~
+
+When you run `git commit`, the plugin automatically:
+1. Detects if COMMIT_EDITMSG buffer is empty
+2. Sends git diff and status to aichat
+3. Generates a conventional commit message
+4. Formats and wraps the message body
+
+MANUAL REGENERATION~
+
+Press |<leader>a.| to regenerate the commit message while preserving trailers.
+
+CONVENTIONAL COMMITS~
+
+Press |<leader>aT| to:
+1. Select a commit type (feat, fix, docs, etc.)
+2. Optionally enter a scope
+3. Apply the prefix to the subject line
+
+TICKET INTEGRATION~
+
+Press |<leader>at| to extract tickets from branch names:
+
+Branch examples:
+  • feature/JIRA-1234-description → Jira: https://...../JIRA-1234
+  • fix/#123-bug-fix → Fixes: #123
+
+AI TRAILERS~
+
+Press |<leader>a,| to add AI assistance acknowledgment trailers.
+
+SUBJECT LINE INDICATOR~
+
+Real-time visual feedback on subject line length:
+  • Gray (≤50 chars): Recommended length
+  • Yellow (51-72 chars): Warning
+  • Red (>72 chars): Too long
+
+================================================================================
+6. KEYMAPS                                                 *gitcommitai-keymaps*
+
+The following keymaps are available in gitcommit buffers:
+
+                                                            *gitcommitai-<leader>a.*
+<leader>a.          Regenerate commit message with AI
+
+                                                            *gitcommitai-<leader>au*
+<leader>au          Undo/restore previous message
+
+                                                            *gitcommitai-<leader>ac*
+<leader>ac          Clear entire buffer
+
+                                                            *gitcommitai-<leader>ad*
+<leader>ad          Delete commit message body (keep trailers)
+
+                                                            *gitcommitai-<leader>at*
+<leader>at          Add ticket reference from branch name
+
+                                                            *gitcommitai-<leader>aT*
+<leader>aT          Apply conventional commit type
+
+                                                            *gitcommitai-<leader>a,*
+<leader>a,          Add AI or co-author trailer
+
+================================================================================
+7. FUNCTIONS                                             *gitcommitai-functions*
+
+The plugin exposes the following module for configuration:
+
+                                                            *gitcommitai.config*
+gitcommitai.config      Current configuration table
+
+                                                            *gitcommitai.setup()*
+gitcommitai.setup({opts})
+                        Configure the plugin. See |gitcommitai-configuration|
+
+================================================================================
+8. LICENSE                                                 *gitcommitai-license*
+
+MIT License
+
+Copyright (c) 2025 Chmouel Boudjnah
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+vim:tw=78:ts=8:ft=help:norl:
