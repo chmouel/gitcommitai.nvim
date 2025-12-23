@@ -8,12 +8,12 @@ M.config = {
   subject_warn_length = 50,
   subject_error_length = 72,
   ticket_patterns = {
-    "(%a+%-%d%d%d+)",  -- letters-digits (3+ digits): srvkp-9991, JIRA-123
-    "(%a+_%d%d%d+)",   -- letters_digits (3+ digits): JIRA_123
-    "#(%d+)",          -- #123 (GitHub issues)
+    "(%a+%-%d%d%d+)",                                 -- letters-digits (3+ digits): srvkp-9991, JIRA-123
+    "(%a+_%d%d%d+)",                                  -- letters_digits (3+ digits): JIRA_123
+    "#(%d+)",                                         -- #123 (GitHub issues)
   },
-  jira_base_url = "https://issues.redhat.com/browse",  -- Base URL for Jira tickets
-  jira_uppercase = true,  -- Convert ticket to uppercase (srvkp-9991 -> SRVKP-9991)
+  jira_base_url = "https://issues.redhat.com/browse", -- Base URL for Jira tickets
+  jira_uppercase = true,                              -- Convert ticket to uppercase (srvkp-9991 -> SRVKP-9991)
   trailers = {
     { name = "Claude",         line = "Co-Authored-By: Claude <noreply@anthropic.com>" },
     { name = "GitHub Copilot", line = "AI-assisted-by: GitHub Copilot" },
