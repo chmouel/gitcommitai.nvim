@@ -207,7 +207,6 @@ The plugin exposes the following module for configuration:
                                                             *gitcommitai.config*
 gitcommitai.config      Current configuration table
 
-                                                            *gitcommitai.setup()*
 gitcommitai.setup({opts})
                         Configure the plugin. See |gitcommitai-configuration|
 
