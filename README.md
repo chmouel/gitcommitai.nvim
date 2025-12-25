@@ -4,14 +4,18 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
 
 ## Features
 
-- **AI-Powered Commit Generation**: Automatically generates conventional commit messages using AI (via [aichat](https://github.com/sigoden/aichat))
-- **Conventional Commits**: Easy application of conventional commit types (feat, fix, docs, etc.)
-- **Smart Formatting**: Automatic wrapping and reflowing of commit message body
-- **Ticket Integration**: Extracts and adds ticket references from branch names (Jira, GitHub issues)
-- **AI Tool Trailers**: Add co-author and AI-assisted-by trailers
-- **Subject Line Length Indicator**: Real-time visual feedback on subject line length
-- **Undo/Redo Support**: Restore previous commit messages
-- **List Formatting**: Preserves bullet points and numbered lists with proper indentation
+- **Use AI for commit generation**:
+  Automatically generates conventional commit messages using AI (via [aichat](https://github.com/sigoden/aichat))
+- **Conventional Commits**:
+  Let you easily choose conventional commit types (feat, fix, docs, etc.)
+- **Smart Formatting**:
+  Automatic wrapping and reflowing of commit message body
+- **AI Tool Trailers**:
+  Add co-author and AI-assisted-by trailers
+- **Subject Line Length Indicator**:
+  Real-time visual feedback on subject line length
+- **Undo/Redo**:
+  Restore previous commit messages like emacs's gitcommit.
 
 ## Requirements
 
