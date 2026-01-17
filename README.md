@@ -125,6 +125,7 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 | Keymap       | Description                          |
 |-------------|--------------------------------------|
 | `<leader>a.` | Regenerate commit message with AI    |
+| `<leader>ah` | Generate commit with hint            |
 | `<leader>au` | Undo/restore previous message        |
 | `<leader>ac` | Clear entire buffer                  |
 | `<leader>ad` | Delete commit message body           |
@@ -141,6 +142,16 @@ When you run `git commit`, the plugin automatically generates a commit message i
 ### Manual Regeneration
 
 Press `<leader>a.` to regenerate the commit message while preserving trailers.
+
+### Generating with a Hint
+
+Press `<leader>ah` to regenerate the commit message with a specific focus or context:
+
+1. Press `<leader>ah`
+2. Enter a hint describing what to emphasize (e.g., "focus on the API changes", "this is a breaking change", "mention the performance improvement")
+3. The AI will generate a commit message that incorporates your hint
+
+This is useful when you want to guide the AI to emphasize specific aspects of your changes.
 
 ### Adding Conventional Commit Type
 

@@ -595,6 +595,60 @@ local function regenerate_commit_message(bufnr)
   end
 end
 
+-- Generate commit message with user hint
+local function generate_with_hint(bufnr)
+  vim.ui.input(
+    { prompt = "Commit focus/hint (optional): " },
+    function(hint)
+      if not hint or hint == "" then
+        vim.notify("No hint provided", vim.log.levels.INFO)
+        return
+      end
+
+      save_for_undo(bufnr)
+
+      local input = table.concat(get_lines(bufnr), "\n")
+      local cmd = {
+        "aichat",
+        "-m" .. M.config.model,
+        "-r" .. M.config.role,
+        hint
+      }
+
+      if vim.system then
+        vim.notify("Generating commit message with hint...", vim.log.levels.INFO)
+
+        vim.system(cmd, { stdin = input }, function(obj)
+          vim.schedule(function()
+            if obj.code ~= 0 or not obj.stdout or obj.stdout == "" then
+              vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
+              return
+            end
+
+            local gen = vim.split(obj.stdout, "\n", { trimempty = true })
+            clean_ai_output(gen)
+            replace_message_keep_trailers(bufnr, gen)
+            reflow_commit_message(bufnr)
+            update_subject_indicator(bufnr)
+            vim.notify("Commit message generated with hint", vim.log.levels.INFO)
+          end)
+        end)
+      else
+        -- Fallback to sync
+        local gen = vim.fn.systemlist(cmd, input)
+        if vim.v.shell_error ~= 0 or not gen or #gen == 0 then
+          vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
+          return
+        end
+        clean_ai_output(gen)
+        replace_message_keep_trailers(bufnr, gen)
+        reflow_commit_message(bufnr)
+        update_subject_indicator(bufnr)
+      end
+    end
+  )
+end
+
 -- Restore previous message (undo)
 local function restore_previous_message(bufnr)
   if not state.last_message or #state.last_message == 0 then
@@ -714,6 +768,10 @@ local function setup_keymaps(bufnr)
   map("<leader>aT", function()
     apply_conventional_commit(bufnr)
   end, "Apply conventional commit type")
+
+  map("<leader>ah", function()
+    generate_with_hint(bufnr)
+  end, "Generate commit with hint")
 
   map("<leader>a,", function()
     vim.ui.select(
