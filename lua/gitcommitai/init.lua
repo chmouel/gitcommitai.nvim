@@ -14,6 +14,7 @@ M.config = {
   },
   jira_base_url = "https://issues.redhat.com/browse", -- Base URL for Jira tickets
   jira_uppercase = true,                              -- Convert ticket to uppercase (srvkp-9991 -> SRVKP-9991)
+  max_input_length = 64000,                           -- Max characters to send to AI (approx 16k tokens)
   trailers = {
     { name = "Claude",         line = "Co-Authored-By: Claude <noreply@anthropic.com>" },
     { name = "GitHub Copilot", line = "AI-assisted-by: GitHub Copilot" },
@@ -237,9 +238,183 @@ local function setup_subject_indicator(bufnr)
   update_subject_indicator(bufnr)
 end
 
+local function is_git_commit_amend_args(args)
+  if not args or #args == 0 then return false end
+
+  local git_idx
+  for i, arg in ipairs(args) do
+    if arg == "git" or arg:match("/git$") then
+      git_idx = i
+      break
+    end
+  end
+  if not git_idx then return false end
+
+  local expects_value = {
+    ["-c"] = true,
+    ["-C"] = true,
+    ["--config-env"] = true,
+    ["--exec-path"] = true,
+    ["--git-dir"] = true,
+    ["--work-tree"] = true,
+    ["--namespace"] = true,
+    ["--super-prefix"] = true,
+    ["--list-cmds"] = true,
+  }
+
+  local i = git_idx + 1
+  local sub_idx
+  while i <= #args do
+    local arg = args[i]
+    if arg == "--" then
+      i = i + 1
+      if i <= #args then
+        sub_idx = i
+      end
+      break
+    end
+    if arg:sub(1, 1) ~= "-" then
+      sub_idx = i
+      break
+    end
+    if expects_value[arg] then
+      i = i + 2
+    else
+      i = i + 1
+    end
+  end
+
+  if not sub_idx or args[sub_idx] ~= "commit" then return false end
+
+  for j = sub_idx + 1, #args do
+    if args[j] == "--amend" then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function split_nul_args(content)
+  if not content or content == "" then return nil end
+  local args = {}
+  for arg in content:gmatch("([^\0]+)") do
+    args[#args + 1] = arg
+  end
+  return args
+end
+
+local function split_ps_args(output)
+  if not output or output == "" then return nil end
+  return vim.split(output, "%s+", { trimempty = true })
+end
+
+local function is_amend_process()
+  local ppid = (vim.uv or vim.loop).os_getppid()
+  if ppid <= 0 then return false end
+
+  -- Linux-specific: check /proc for maximum reliability and speed
+  local f = io.open("/proc/" .. ppid .. "/cmdline", "r")
+  if f then
+    local content = f:read("*all")
+    f:close()
+    local args = split_nul_args(content)
+    if is_git_commit_amend_args(args) then return true end
+  end
+
+  -- Fallback for macOS and Linux without /proc (e.g., containers)
+  -- We try 'args' first as it's the most standard for full command lines
+  local cmd = string.format("ps -p %d -o args=", ppid)
+  local output = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then
+    -- Try 'command' as an alias
+    cmd = string.format("ps -p %d -o command=", ppid)
+    output = vim.fn.system(cmd)
+  end
+
+  local args = split_ps_args(output)
+  return is_git_commit_amend_args(args)
+end
+
+local function get_staged_diff()
+  local cmd = { "git", "diff", "--cached", "--no-color" }
+
+  if is_amend_process() then
+    -- If amending, we want to see changes relative to the commit being amended (HEAD),
+    -- which means comparing the index against HEAD's parent (HEAD^).
+    -- If HEAD^ doesn't exist (amending root commit), we fall back to standard cached diff.
+    if vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
+      cmd = { "git", "diff", "--cached", "HEAD^", "--no-color" }
+      vim.notify("Detected git commit --amend, using full amend context", vim.log.levels.INFO)
+    end
+  end
+
+  local output = vim.fn.systemlist(cmd)
+  if vim.v.shell_error ~= 0 then
+    return {}
+  end
+  return output
+end
+
+local function get_input_with_context(bufnr)
+  local lines = get_lines(bufnr)
+  local diff = get_staged_diff()
+  local buffer_content = table.concat(lines, "\n")
+  local is_amend = is_amend_process()
+  local input = buffer_content
+
+  if is_amend then
+    input = "User is amending a commit.\n\n" ..
+        "Current commit message:\n" .. buffer_content .. "\n\n" ..
+        "Please generate a new commit message."
+  end
+
+  if #diff > 0 then
+    local diff_str = table.concat(diff, "\n")
+    local combined_len = #input + #diff_str
+
+    if combined_len > M.config.max_input_length then
+      local allowed_diff_len = M.config.max_input_length - #input - 100 -- reserve space for warning
+      if allowed_diff_len > 0 then
+        diff_str = diff_str:sub(1, allowed_diff_len) .. "\n... (diff truncated due to length limit)"
+        vim.notify("Diff truncated to fit max_input_length", vim.log.levels.WARN)
+      else
+        diff_str = "(diff omitted due to length limit)"
+      end
+    end
+
+    if is_amend then
+      input = input .. "\n\n# Diff (changes from original commit + new staged changes):\n" .. diff_str
+    else
+      input = input .. "\n\n# Diff (automatically added for context):\n" .. diff_str
+    end
+  end
+  return input
+end
+
 -- Async commit generation using vim.system (Neovim 0.10+)
-local function generate_commit_async(bufnr, callback)
-  local input = table.concat(get_lines(bufnr), "\n")
+local function replace_message_keep_trailers(bufnr, new_message_lines)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local msg, comments = split_comments(lines)
+  local _, trailers = peel_trailers(msg)
+
+  local out = {}
+  for _, l in ipairs(new_message_lines) do out[#out + 1] = l end
+
+  if #trailers > 0 then
+    while #out > 0 and is_blank(out[#out]) do out[#out] = nil end
+    out[#out + 1] = ""
+    for _, l in ipairs(trailers) do out[#out + 1] = l end
+  end
+
+  for _, l in ipairs(comments) do out[#out + 1] = l end
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, out)
+end
+
+local function generate_commit_async(bufnr, callback, opts)
+  opts = opts or {}
+  local replace = opts.replace or false
+  local input = get_input_with_context(bufnr)
 
   local cmd = {
     "aichat",
@@ -261,7 +436,13 @@ local function generate_commit_async(bufnr, callback)
 
         local output = vim.split(obj.stdout, "\n", { trimempty = true })
         clean_ai_output(output)
-        vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
+        
+        if replace then
+          replace_message_keep_trailers(bufnr, output)
+        else
+          vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
+        end
+        
         reflow_commit_message(bufnr)
         vim.notify("Commit message generated", vim.log.levels.INFO)
         if callback then callback(true) end
@@ -276,7 +457,13 @@ local function generate_commit_async(bufnr, callback)
       return
     end
     clean_ai_output(output)
-    vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
+    
+    if replace then
+      replace_message_keep_trailers(bufnr, output)
+    else
+      vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
+    end
+    
     reflow_commit_message(bufnr)
     if callback then callback(true) end
   end
@@ -538,29 +725,11 @@ reflow_commit_message = function(bufnr)
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, out)
 end
 
-local function replace_message_keep_trailers(bufnr, new_message_lines)
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  local msg, comments = split_comments(lines)
-  local _, trailers = peel_trailers(msg)
-
-  local out = {}
-  for _, l in ipairs(new_message_lines) do out[#out + 1] = l end
-
-  if #trailers > 0 then
-    while #out > 0 and is_blank(out[#out]) do out[#out] = nil end
-    out[#out + 1] = ""
-    for _, l in ipairs(trailers) do out[#out + 1] = l end
-  end
-
-  for _, l in ipairs(comments) do out[#out + 1] = l end
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, out)
-end
-
 -- Async regenerate commit message
 local function regenerate_commit_message(bufnr)
   save_for_undo(bufnr)
 
-  local input = table.concat(get_lines(bufnr), "\n")
+  local input = get_input_with_context(bufnr)
   local cmd = { "aichat", "-m" .. M.config.model, "-r" .. M.config.role }
 
   if vim.system then
@@ -607,7 +776,7 @@ local function generate_with_hint(bufnr)
 
       save_for_undo(bufnr)
 
-      local input = table.concat(get_lines(bufnr), "\n")
+      local input = get_input_with_context(bufnr)
       local cmd = {
         "aichat",
         "-m" .. M.config.model,
@@ -803,8 +972,9 @@ vim.api.nvim_create_autocmd("BufEnter", {
 
     local lines = get_lines(bufnr)
     local scan = scan_commit(lines)
+    local is_amend = is_amend_process()
 
-    if scan.has_content then
+    if scan.has_content and not is_amend then
       return
     end
 
@@ -822,7 +992,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
       wrap_body(bufnr, body_start, body_end)
       cleanup_blank_lines(bufnr, new_scan)
       update_subject_indicator(bufnr)
-    end)
+    end, { replace = is_amend })
   end,
 })
 

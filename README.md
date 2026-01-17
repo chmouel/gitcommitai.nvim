@@ -14,6 +14,8 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
   Add co-author and AI-assisted-by trailers
 - **Subject Line Length Indicator**:
   Real-time visual feedback on subject line length
+- **Smart Amend Detection**:
+  Provide full context (original changes + new staged changes) when amending commits
 - **Undo/Redo**:
   Restore previous commit messages like emacs's gitcommit.
 
@@ -91,6 +93,9 @@ require("gitcommitai").setup({
   -- Jira configuration
   jira_base_url = "https://issues.redhat.com/browse",
   jira_uppercase = true,  -- Convert ticket to uppercase (jira-123 -> JIRA-123)
+
+  -- Max characters to send to AI (prevents sending massive diffs like lockfiles)
+  max_input_length = 64000,
 
   -- AI tool trailers
   trailers = {
@@ -222,6 +227,10 @@ Example `~/.config/aichat/roles.yaml` entry:
    - Indentation
    - Hard line breaks (lines ending with double spaces)
 4. **Trailer Management**: Git trailers are preserved when regenerating or editing messages
+5. **Amend Strategy**: When amending a commit (`git commit --amend`), the plugin detects this state and:
+   - Fetches the diff relative to the *parent* of the current commit (HEAD^) to capture the full context of the change.
+   - Includes the existing commit message in the prompt.
+   - Instructs the AI to generate a new message based on the combined context.
 
 ## License
 
