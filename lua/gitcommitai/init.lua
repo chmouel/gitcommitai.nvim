@@ -296,11 +296,31 @@ local function is_git_commit_amend_args(args)
 end
 
 local function split_nul_args(content)
-  if not content or content == "" then return nil end
-  local args = {}
-  for arg in content:gmatch("([^\0]+)") do
-    args[#args + 1] = arg
+  if not content or content == "" then
+    return nil
   end
+
+  local args = {}
+  local nul = string.char(0)
+  local start = 1
+
+  while true do
+    local pos = content:find(nul, start, true)
+    if not pos then
+      local tail = content:sub(start)
+      if tail ~= "" then
+        args[#args + 1] = tail
+      end
+      break
+    end
+
+    if pos > start then
+      args[#args + 1] = content:sub(start, pos - 1)
+    end
+
+    start = pos + 1
+  end
+
   return args
 end
 
@@ -436,13 +456,13 @@ local function generate_commit_async(bufnr, callback, opts)
 
         local output = vim.split(obj.stdout, "\n", { trimempty = true })
         clean_ai_output(output)
-        
+
         if replace then
           replace_message_keep_trailers(bufnr, output)
         else
           vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
         end
-        
+
         reflow_commit_message(bufnr)
         vim.notify("Commit message generated", vim.log.levels.INFO)
         if callback then callback(true) end
@@ -457,13 +477,13 @@ local function generate_commit_async(bufnr, callback, opts)
       return
     end
     clean_ai_output(output)
-    
+
     if replace then
       replace_message_keep_trailers(bufnr, output)
     else
       vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
     end
-    
+
     reflow_commit_message(bufnr)
     if callback then callback(true) end
   end
