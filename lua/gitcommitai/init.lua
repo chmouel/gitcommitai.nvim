@@ -412,6 +412,64 @@ local function get_input_with_context(bufnr)
   return input
 end
 
+local function resolve_model(model)
+  if model and model ~= "" then
+    return model
+  end
+  return M.config.model
+end
+
+local function list_aichat_models()
+  local output = vim.fn.systemlist({ "aichat", "--list-models" })
+  if vim.v.shell_error ~= 0 or not output or #output == 0 then
+    return nil
+  end
+
+  local models = {}
+  local seen = {}
+  for _, line in ipairs(output) do
+    local model = trim(line)
+    if model ~= "" and not seen[model] then
+      seen[model] = true
+      models[#models + 1] = model
+    end
+  end
+
+  if #models == 0 then
+    return nil
+  end
+
+  table.sort(models, function(a, b)
+    if a == M.config.model then return true end
+    if b == M.config.model then return false end
+    return a < b
+  end)
+
+  return models
+end
+
+local function select_aichat_model(callback)
+  local models = list_aichat_models()
+  if not models then
+    vim.notify("Could not list models from aichat --list-models", vim.log.levels.WARN)
+    return
+  end
+
+  vim.ui.select(models, {
+    prompt = "Choose AI model for this generation:",
+    format_item = function(item)
+      if item == M.config.model then
+        return item .. " (default)"
+      end
+      return item
+    end,
+  }, function(choice)
+    if choice and callback then
+      callback(choice)
+    end
+  end)
+end
+
 -- Async commit generation using vim.system (Neovim 0.10+)
 local function replace_message_keep_trailers(bufnr, new_message_lines)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -434,11 +492,12 @@ end
 local function generate_commit_async(bufnr, callback, opts)
   opts = opts or {}
   local replace = opts.replace or false
+  local model = resolve_model(opts.model)
   local input = get_input_with_context(bufnr)
 
   local cmd = {
     "aichat",
-    "-m" .. M.config.model,
+    "-m" .. model,
     "-r" .. M.config.role,
   }
 
@@ -746,11 +805,13 @@ reflow_commit_message = function(bufnr)
 end
 
 -- Async regenerate commit message
-local function regenerate_commit_message(bufnr)
+local function regenerate_commit_message(bufnr, opts)
+  opts = opts or {}
+  local model = resolve_model(opts.model)
   save_for_undo(bufnr)
 
   local input = get_input_with_context(bufnr)
-  local cmd = { "aichat", "-m" .. M.config.model, "-r" .. M.config.role }
+  local cmd = { "aichat", "-m" .. model, "-r" .. M.config.role }
 
   if vim.system then
     vim.notify("Regenerating commit message...", vim.log.levels.INFO)
@@ -785,7 +846,10 @@ local function regenerate_commit_message(bufnr)
 end
 
 -- Generate commit message with user hint
-local function generate_with_hint(bufnr)
+local function generate_with_hint(bufnr, opts)
+  opts = opts or {}
+  local model = resolve_model(opts.model)
+
   vim.ui.input(
     { prompt = "Commit focus/hint (optional): " },
     function(hint)
@@ -799,7 +863,7 @@ local function generate_with_hint(bufnr)
       local input = get_input_with_context(bufnr)
       local cmd = {
         "aichat",
-        "-m" .. M.config.model,
+        "-m" .. model,
         "-r" .. M.config.role,
         hint
       }
@@ -836,6 +900,12 @@ local function generate_with_hint(bufnr)
       end
     end
   )
+end
+
+local function regenerate_commit_message_with_selected_model(bufnr)
+  select_aichat_model(function(model)
+    regenerate_commit_message(bufnr, { model = model })
+  end)
 end
 
 -- Restore previous message (undo)
@@ -961,6 +1031,10 @@ local function setup_keymaps(bufnr)
   map("<leader>ah", function()
     generate_with_hint(bufnr)
   end, "Generate commit with hint")
+
+  map("<leader>am", function()
+    regenerate_commit_message_with_selected_model(bufnr)
+  end, "Regenerate commit with another model")
 
   map("<leader>a,", function()
     vim.ui.select(

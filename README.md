@@ -131,6 +131,7 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 |-------------|--------------------------------------|
 | `<leader>a.` | Regenerate commit message with AI    |
 | `<leader>ah` | Generate commit with hint            |
+| `<leader>am` | Regenerate with selected AI model    |
 | `<leader>au` | Undo/restore previous message        |
 | `<leader>ac` | Clear entire buffer                  |
 | `<leader>ad` | Delete commit message body           |
@@ -157,6 +158,14 @@ Press `<leader>ah` to regenerate the commit message with a specific focus or con
 3. The AI will generate a commit message that incorporates your hint
 
 This is useful when you want to guide the AI to emphasize specific aspects of your changes.
+
+### Regenerating with Another Model
+
+Press `<leader>am` to regenerate using a one-off model selection:
+
+1. Press `<leader>am`
+2. Pick a model from `aichat --list-models`
+3. The commit message is regenerated with the selected model (without changing your default `model` config)
 
 ### Adding Conventional Commit Type
 

@@ -147,6 +147,11 @@ MANUAL REGENERATION~
 
 Press |<leader>a.| to regenerate the commit message while preserving trailers.
 
+REGENERATE WITH ANOTHER MODEL~
+
+Press |<leader>am| to regenerate using a one-off model selection from
+`aichat --list-models`. This does not change your configured default model.
+
 CONVENTIONAL COMMITS~
 
 Press |<leader>aT| to:
@@ -180,6 +185,12 @@ The following keymaps are available in gitcommit buffers:
 
                                                             *gitcommitai-<leader>a.*
 <leader>a.          Regenerate commit message with AI
+
+                                                            *gitcommitai-<leader>ah*
+<leader>ah          Generate commit with hint
+
+                                                            *gitcommitai-<leader>am*
+<leader>am          Regenerate with selected AI model
 
                                                             *gitcommitai-<leader>au*
 <leader>au          Undo/restore previous message
