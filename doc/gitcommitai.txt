@@ -145,23 +145,23 @@ When you run `git commit`, the plugin automatically:
 
 MANUAL REGENERATION~
 
-Press |<leader>a.| to regenerate the commit message while preserving trailers.
+Press |<leader>ag.| to regenerate the commit message while preserving trailers.
 
 REGENERATE WITH ANOTHER MODEL~
 
-Press |<leader>am| to regenerate using a one-off model selection from
+Press |<leader>agm| to regenerate using a one-off model selection from
 `aichat --list-models`. This does not change your configured default model.
 
 CONVENTIONAL COMMITS~
 
-Press |<leader>aT| to:
+Press |<leader>agT| to:
 1. Select a commit type (feat, fix, docs, etc.)
 2. Optionally enter a scope
 3. Apply the prefix to the subject line
 
 TICKET INTEGRATION~
 
-Press |<leader>at| to extract tickets from branch names:
+Press |<leader>agt| to extract tickets from branch names:
 
 Branch examples:
   • feature/JIRA-1234-description → Jira: https://...../JIRA-1234
@@ -169,7 +169,7 @@ Branch examples:
 
 AI TRAILERS~
 
-Press |<leader>a,| to add AI assistance acknowledgment trailers.
+Press |<leader>ag,| to add AI assistance acknowledgment trailers.
 
 SUBJECT LINE INDICATOR~
 
@@ -183,32 +183,32 @@ Real-time visual feedback on subject line length:
 
 The following keymaps are available in gitcommit buffers:
 
-                                                            *gitcommitai-<leader>a.*
-<leader>a.          Regenerate commit message with AI
+                                                            *gitcommitai-<leader>ag.*
+<leader>ag.         Regenerate commit message with AI
 
-                                                            *gitcommitai-<leader>ah*
-<leader>ah          Generate commit with hint
+                                                            *gitcommitai-<leader>agh*
+<leader>agh         Generate commit with hint
 
-                                                            *gitcommitai-<leader>am*
-<leader>am          Regenerate with selected AI model
+                                                            *gitcommitai-<leader>agm*
+<leader>agm         Regenerate with selected AI model
 
-                                                            *gitcommitai-<leader>au*
-<leader>au          Undo/restore previous message
+                                                            *gitcommitai-<leader>agu*
+<leader>agu         Undo/restore previous message
 
-                                                            *gitcommitai-<leader>ac*
-<leader>ac          Clear entire buffer
+                                                            *gitcommitai-<leader>agc*
+<leader>agc         Clear entire buffer
 
-                                                            *gitcommitai-<leader>ad*
-<leader>ad          Delete commit message body (keep trailers)
+                                                            *gitcommitai-<leader>agd*
+<leader>agd         Delete commit message body (keep trailers)
 
-                                                            *gitcommitai-<leader>at*
-<leader>at          Add ticket reference from branch name
+                                                            *gitcommitai-<leader>agt*
+<leader>agt         Add ticket reference from branch name
 
-                                                            *gitcommitai-<leader>aT*
-<leader>aT          Apply conventional commit type
+                                                            *gitcommitai-<leader>agT*
+<leader>agT         Apply conventional commit type
 
-                                                            *gitcommitai-<leader>a,*
-<leader>a,          Add AI or co-author trailer
+                                                            *gitcommitai-<leader>ag,*
+<leader>ag,         Add AI or co-author trailer
 
 ================================================================================
 7. FUNCTIONS                                             *gitcommitai-functions*

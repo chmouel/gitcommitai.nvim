@@ -1002,41 +1002,41 @@ local function setup_keymaps(bufnr)
     })
   end
 
-  map("<leader>a.", function()
+  map("<leader>ag.", function()
     regenerate_commit_message(bufnr)
   end, "Regenerate commit message")
 
-  map("<leader>au", function()
+  map("<leader>agu", function()
     restore_previous_message(bufnr)
   end, "Undo/restore previous message")
 
-  map("<leader>ac", function()
+  map("<leader>agc", function()
     save_for_undo(bufnr)
     set_lines(bufnr, 0, -1, {})
   end, "Clear entire buffer")
 
-  map("<leader>ad", function()
+  map("<leader>agd", function()
     save_for_undo(bufnr)
     delete_message(bufnr)
   end, "Delete commit message body")
 
-  map("<leader>at", function()
+  map("<leader>agt", function()
     insert_ticket_trailer(bufnr)
   end, "Add ticket from branch name")
 
-  map("<leader>aT", function()
+  map("<leader>agT", function()
     apply_conventional_commit(bufnr)
   end, "Apply conventional commit type")
 
-  map("<leader>ah", function()
+  map("<leader>agh", function()
     generate_with_hint(bufnr)
   end, "Generate commit with hint")
 
-  map("<leader>am", function()
+  map("<leader>agm", function()
     regenerate_commit_message_with_selected_model(bufnr)
   end, "Regenerate commit with another model")
 
-  map("<leader>a,", function()
+  map("<leader>ag,", function()
     vim.ui.select(
       M.config.trailers,
       {

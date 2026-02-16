@@ -129,15 +129,15 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 
 | Keymap       | Description                          |
 |-------------|--------------------------------------|
-| `<leader>a.` | Regenerate commit message with AI    |
-| `<leader>ah` | Generate commit with hint            |
-| `<leader>am` | Regenerate with selected AI model    |
-| `<leader>au` | Undo/restore previous message        |
-| `<leader>ac` | Clear entire buffer                  |
-| `<leader>ad` | Delete commit message body           |
-| `<leader>at` | Add ticket from branch name          |
-| `<leader>aT` | Apply conventional commit type       |
-| `<leader>a,` | Add AI or co-author trailer          |
+| `<leader>ag.` | Regenerate commit message with AI    |
+| `<leader>agh` | Generate commit with hint            |
+| `<leader>agm` | Regenerate with selected AI model    |
+| `<leader>agu` | Undo/restore previous message        |
+| `<leader>agc` | Clear entire buffer                  |
+| `<leader>agd` | Delete commit message body           |
+| `<leader>agt` | Add ticket from branch name          |
+| `<leader>agT` | Apply conventional commit type       |
+| `<leader>ag,` | Add AI or co-author trailer          |
 
 ## Usage
 
@@ -147,13 +147,13 @@ When you run `git commit`, the plugin automatically generates a commit message i
 
 ### Manual Regeneration
 
-Press `<leader>a.` to regenerate the commit message while preserving trailers.
+Press `<leader>ag.` to regenerate the commit message while preserving trailers.
 
 ### Generating with a Hint
 
-Press `<leader>ah` to regenerate the commit message with a specific focus or context:
+Press `<leader>agh` to regenerate the commit message with a specific focus or context:
 
-1. Press `<leader>ah`
+1. Press `<leader>agh`
 2. Enter a hint describing what to emphasize (e.g., "focus on the API changes", "this is a breaking change", "mention the performance improvement")
 3. The AI will generate a commit message that incorporates your hint
 
@@ -161,29 +161,29 @@ This is useful when you want to guide the AI to emphasize specific aspects of yo
 
 ### Regenerating with Another Model
 
-Press `<leader>am` to regenerate using a one-off model selection:
+Press `<leader>agm` to regenerate using a one-off model selection:
 
-1. Press `<leader>am`
+1. Press `<leader>agm`
 2. Pick a model from `aichat --list-models`
 3. The commit message is regenerated with the selected model (without changing your default `model` config)
 
 ### Adding Conventional Commit Type
 
-1. Press `<leader>aT`
+1. Press `<leader>agT`
 2. Select the commit type (feat, fix, docs, etc.)
 3. Optionally enter a scope
 4. The subject line will be prefixed with the conventional commit format
 
 ### Adding Ticket References
 
-Press `<leader>at` to automatically extract and add a ticket reference from your branch name:
+Press `<leader>agt` to automatically extract and add a ticket reference from your branch name:
 
 - Branch: `feature/JIRA-1234-add-feature` → Adds `Jira: https://issues.redhat.com/browse/JIRA-1234`
 - Branch: `fix/#123-bug-fix` → Adds `Fixes: #123`
 
 ### Adding AI Trailers
 
-Press `<leader>a,` to select and add an AI tool trailer to acknowledge AI assistance.
+Press `<leader>ag,` to select and add an AI tool trailer to acknowledge AI assistance.
 
 ### Subject Line Length Indicator
 
