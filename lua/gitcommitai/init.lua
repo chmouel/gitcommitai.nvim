@@ -1002,7 +1002,7 @@ local function setup_keymaps(bufnr)
     })
   end
 
-  map("<leader>ag.", function()
+  map("<leader>agr", function()
     regenerate_commit_message(bufnr)
   end, "Regenerate commit message")
 
@@ -1024,7 +1024,7 @@ local function setup_keymaps(bufnr)
     insert_ticket_trailer(bufnr)
   end, "Add ticket from branch name")
 
-  map("<leader>agT", function()
+  map("<leader>agp", function()
     apply_conventional_commit(bufnr)
   end, "Apply conventional commit type")
 
@@ -1036,7 +1036,7 @@ local function setup_keymaps(bufnr)
     regenerate_commit_message_with_selected_model(bufnr)
   end, "Regenerate commit with another model")
 
-  map("<leader>ag,", function()
+  map("<leader>aga", function()
     vim.ui.select(
       M.config.trailers,
       {

@@ -145,7 +145,7 @@ When you run `git commit`, the plugin automatically:
 
 MANUAL REGENERATION~
 
-Press |<leader>ag.| to regenerate the commit message while preserving trailers.
+Press |<leader>agr| to regenerate the commit message while preserving trailers.
 
 REGENERATE WITH ANOTHER MODEL~
 
@@ -154,7 +154,7 @@ Press |<leader>agm| to regenerate using a one-off model selection from
 
 CONVENTIONAL COMMITS~
 
-Press |<leader>agT| to:
+Press |<leader>agp| to:
 1. Select a commit type (feat, fix, docs, etc.)
 2. Optionally enter a scope
 3. Apply the prefix to the subject line
@@ -169,7 +169,7 @@ Branch examples:
 
 AI TRAILERS~
 
-Press |<leader>ag,| to add AI assistance acknowledgment trailers.
+Press |<leader>aga| to add AI assistance acknowledgment trailers.
 
 SUBJECT LINE INDICATOR~
 
@@ -183,8 +183,8 @@ Real-time visual feedback on subject line length:
 
 The following keymaps are available in gitcommit buffers:
 
-                                                            *gitcommitai-<leader>ag.*
-<leader>ag.         Regenerate commit message with AI
+                                                            *gitcommitai-<leader>agr*
+<leader>agr         Regenerate commit message with AI
 
                                                             *gitcommitai-<leader>agh*
 <leader>agh         Generate commit with hint
@@ -204,11 +204,11 @@ The following keymaps are available in gitcommit buffers:
                                                             *gitcommitai-<leader>agt*
 <leader>agt         Add ticket reference from branch name
 
-                                                            *gitcommitai-<leader>agT*
-<leader>agT         Apply conventional commit type
+                                                            *gitcommitai-<leader>agp*
+<leader>agp         Apply conventional commit type
 
-                                                            *gitcommitai-<leader>ag,*
-<leader>ag,         Add AI or co-author trailer
+                                                            *gitcommitai-<leader>aga*
+<leader>aga         Add AI or co-author trailer
 
 ================================================================================
 7. FUNCTIONS                                             *gitcommitai-functions*

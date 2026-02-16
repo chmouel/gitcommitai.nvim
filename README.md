@@ -129,15 +129,15 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 
 | Keymap       | Description                          |
 |-------------|--------------------------------------|
-| `<leader>ag.` | Regenerate commit message with AI    |
+| `<leader>agr` | Regenerate commit message with AI    |
 | `<leader>agh` | Generate commit with hint            |
 | `<leader>agm` | Regenerate with selected AI model    |
 | `<leader>agu` | Undo/restore previous message        |
 | `<leader>agc` | Clear entire buffer                  |
 | `<leader>agd` | Delete commit message body           |
 | `<leader>agt` | Add ticket from branch name          |
-| `<leader>agT` | Apply conventional commit type       |
-| `<leader>ag,` | Add AI or co-author trailer          |
+| `<leader>agp` | Apply conventional commit type       |
+| `<leader>aga` | Add AI or co-author trailer          |
 
 ## Usage
 
@@ -147,7 +147,7 @@ When you run `git commit`, the plugin automatically generates a commit message i
 
 ### Manual Regeneration
 
-Press `<leader>ag.` to regenerate the commit message while preserving trailers.
+Press `<leader>agr` to regenerate the commit message while preserving trailers.
 
 ### Generating with a Hint
 
@@ -169,7 +169,7 @@ Press `<leader>agm` to regenerate using a one-off model selection:
 
 ### Adding Conventional Commit Type
 
-1. Press `<leader>agT`
+1. Press `<leader>agp`
 2. Select the commit type (feat, fix, docs, etc.)
 3. Optionally enter a scope
 4. The subject line will be prefixed with the conventional commit format
@@ -183,7 +183,7 @@ Press `<leader>agt` to automatically extract and add a ticket reference from you
 
 ### Adding AI Trailers
 
-Press `<leader>ag,` to select and add an AI tool trailer to acknowledge AI assistance.
+Press `<leader>aga` to select and add an AI tool trailer to acknowledge AI assistance.
 
 ### Subject Line Length Indicator
 
