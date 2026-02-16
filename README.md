@@ -78,6 +78,7 @@ require("gitcommitai").setup({
   -- AI model configuration
   model = "gemini:gemini-2.5-flash-lite",
   role = "gitcommit",
+  autocommit = true,  -- Auto-generate commit message on COMMIT_EDITMSG open
 
   -- Subject line length indicators
   subject_warn_length = 50,   -- Warning threshold (yellow)
@@ -144,6 +145,7 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 ### Automatic Generation
 
 When you run `git commit`, the plugin automatically generates a commit message if the buffer is empty.
+Set `autocommit = false` to disable this behavior and use manual keymaps only.
 
 ### Manual Regeneration
 

@@ -85,6 +85,10 @@ Setup function:                                        *gitcommitai.setup()*
         • role (string): aichat role name
           Default: "gitcommit"
 
+        • autocommit (boolean): Auto-generate commit message when opening
+          COMMIT_EDITMSG
+          Default: true
+
         • subject_warn_length (number): Subject line warning threshold
           Default: 50
 
@@ -124,6 +128,7 @@ Example configuration:
     require("gitcommitai").setup({
       model = "claude:claude-3-5-sonnet-20241022",
       role = "gitcommit",
+      autocommit = false,
       subject_warn_length = 60,
       jira_base_url = "https://jira.mycompany.com/browse",
       ticket_patterns = {
@@ -142,6 +147,9 @@ When you run `git commit`, the plugin automatically:
 2. Sends git diff and status to aichat
 3. Generates a conventional commit message
 4. Formats and wraps the message body
+
+Set |gitcommitai.setup()| option `autocommit = false` to disable automatic
+generation and use manual keymaps only.
 
 MANUAL REGENERATION~
 

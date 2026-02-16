@@ -5,6 +5,7 @@ local M = {}
 M.config = {
   model = "gemini:gemini-2.5-flash-lite",
   role = "gitcommit",
+  autocommit = true,
   subject_warn_length = 50,
   subject_error_length = 72,
   ticket_patterns = {
@@ -1063,6 +1064,10 @@ vim.api.nvim_create_autocmd("BufEnter", {
     vim.bo[bufnr].filetype = "gitcommit"
     setup_keymaps(bufnr)
     setup_subject_indicator(bufnr)
+
+    if not M.config.autocommit then
+      return
+    end
 
     local lines = get_lines(bufnr)
     local scan = scan_commit(lines)
