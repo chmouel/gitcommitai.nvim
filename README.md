@@ -34,7 +34,7 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
   "chmouel/gitcommitai.nvim",
   ft = "gitcommit",
   opts = {
-    model = "gemini:gemini-2.5-flash-lite",  -- aichat model to use
+    model = "gemini:gemini-3.1-flash-lite-preview",  -- aichat model to use
     role = "gitcommit",                       -- aichat role
   },
 }
@@ -48,7 +48,7 @@ use {
   ft = "gitcommit",
   config = function()
     require("gitcommitai").setup({
-      model = "gemini:gemini-2.5-flash-lite",
+      model = "gemini:gemini-3.1-flash-lite-preview",
       role = "gitcommit",
     })
   end,
@@ -63,7 +63,7 @@ Plug 'chmouel/gitcommitai.nvim'
 " In your init.vim or init.lua:
 lua << EOF
 require("gitcommitai").setup({
-  model = "gemini:gemini-2.5-flash-lite",
+  model = "gemini:gemini-3.1-flash-lite-preview",
   role = "gitcommit",
 })
 EOF
@@ -76,7 +76,7 @@ Here's the default configuration:
 ```lua
 require("gitcommitai").setup({
   -- AI model configuration
-  model = "gemini:gemini-2.5-flash-lite",
+  model = "gemini:gemini-3.1-flash-lite-preview",
   role = "gitcommit",
   autocommit = true,  -- Auto-generate commit message on COMMIT_EDITMSG open
 
@@ -224,7 +224,7 @@ Example `~/.config/aichat/roles.yaml` entry:
 
 ## Tips
 
-1. **Customize AI Model**: Change the `model` option to use different AI providers supported by aichat (OpenAI, Claude, Gemini, etc.). Use a smaller model for faster responses like `gemini:gemini-2.5-flash-lite`
+1. **Customize AI Model**: Change the `model` option to use different AI providers supported by aichat (OpenAI, Claude, Gemini, etc.). Use a smaller model for faster responses like `gemini:gemini-3.1-flash-lite-preview`
 2. **Ticket Patterns**: Adjust `ticket_patterns` to match your team's branch naming conventions
 3. **Jira URL**: Set `jira_base_url` to your organization's Jira instance
 4. **Custom Trailers**: Add your own AI tools or co-authors to the `trailers` list

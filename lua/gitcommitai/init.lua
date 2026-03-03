@@ -3,7 +3,7 @@ local TRAILER_RE = "^[%w%-]+:"
 -- Configuration
 local M = {}
 M.config = {
-  model = "gemini:gemini-2.5-flash-lite",
+  model = "gemini:gemini-3.1-flash-lite-preview",
   role = "gitcommit",
   autocommit = true,
   subject_warn_length = 50,

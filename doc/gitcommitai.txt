@@ -47,7 +47,7 @@ Using lazy.nvim:
       "yourusername/gitcommitai.nvim",
       ft = "gitcommit",
       opts = {
-        model = "gemini:gemini-2.5-flash-lite",
+        model = "gemini:gemini-3.1-flash-lite-preview",
         role = "gitcommit",
       },
     }
@@ -60,7 +60,7 @@ Using packer.nvim:
       ft = "gitcommit",
       config = function()
         require("gitcommitai").setup({
-          model = "gemini:gemini-2.5-flash-lite",
+          model = "gemini:gemini-3.1-flash-lite-preview",
           role = "gitcommit",
         })
       end,
@@ -80,7 +80,7 @@ Setup function:                                        *gitcommitai.setup()*
         {opts} (table|nil) Configuration table with the following keys:
 
         • model (string): aichat model to use
-          Default: "gemini:gemini-2.5-flash-lite"
+          Default: "gemini:gemini-3.1-flash-lite-preview"
 
         • role (string): aichat role name
           Default: "gitcommit"
