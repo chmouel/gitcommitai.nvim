@@ -23,6 +23,10 @@ M.config = {
     { name = "OpenAI ChatGPT", line = "AI-assisted-by: OpenAI ChatGPT" },
     { name = "Cursor",         line = "AI-assisted-by: Cursor" },
   },
+  output_cleanup_patterns = {
+    "^```%w*$",         -- code fences (```python, ```text, etc.)
+    "%s*END OF INPUT$", -- END OF INPUT marker
+  },
   conventional_commits = {
     { type = "feat",     desc = "A new feature" },
     { type = "fix",      desc = "A bug fix" },
@@ -56,12 +60,26 @@ local reflow_commit_message
 -- Helper functions (consolidated)
 local function is_blank(s) return s:match("^%s*$") ~= nil end
 
--- Remove "END OF INPUT" marker from AI output
+-- Remove lines matching output_cleanup_patterns from AI output
 local function clean_ai_output(lines)
-  while #lines > 0 and lines[#lines]:match("^END OF INPUT$") do
-    lines[#lines] = nil
+  local patterns = M.config.output_cleanup_patterns
+  if not patterns or #patterns == 0 then
+    return lines
   end
-  return lines
+  local result = {}
+  for _, line in ipairs(lines) do
+    local matched = false
+    for _, pat in ipairs(patterns) do
+      if line:match(pat) then
+        matched = true
+        break
+      end
+    end
+    if not matched then
+      result[#result + 1] = line
+    end
+  end
+  return result
 end
 local function trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 local function is_trailer_key_line(line) return line:match("^[%w][%w%-]*:%s+%S") ~= nil end
@@ -515,7 +533,7 @@ local function generate_commit_async(bufnr, callback, opts)
         end
 
         local output = vim.split(obj.stdout, "\n", { trimempty = true })
-        clean_ai_output(output)
+        output = clean_ai_output(output)
 
         if replace then
           replace_message_keep_trailers(bufnr, output)
@@ -536,7 +554,7 @@ local function generate_commit_async(bufnr, callback, opts)
       if callback then callback(false) end
       return
     end
-    clean_ai_output(output)
+    output = clean_ai_output(output)
 
     if replace then
       replace_message_keep_trailers(bufnr, output)
@@ -825,7 +843,7 @@ local function regenerate_commit_message(bufnr, opts)
         end
 
         local gen = vim.split(obj.stdout, "\n", { trimempty = true })
-        clean_ai_output(gen)
+        gen = clean_ai_output(gen)
         replace_message_keep_trailers(bufnr, gen)
         reflow_commit_message(bufnr)
         update_subject_indicator(bufnr)
@@ -839,7 +857,7 @@ local function regenerate_commit_message(bufnr, opts)
       vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
       return
     end
-    clean_ai_output(gen)
+    gen = clean_ai_output(gen)
     replace_message_keep_trailers(bufnr, gen)
     reflow_commit_message(bufnr)
     update_subject_indicator(bufnr)
@@ -880,7 +898,7 @@ local function generate_with_hint(bufnr, opts)
             end
 
             local gen = vim.split(obj.stdout, "\n", { trimempty = true })
-            clean_ai_output(gen)
+            gen = clean_ai_output(gen)
             replace_message_keep_trailers(bufnr, gen)
             reflow_commit_message(bufnr)
             update_subject_indicator(bufnr)
@@ -894,7 +912,7 @@ local function generate_with_hint(bufnr, opts)
           vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
           return
         end
-        clean_ai_output(gen)
+        gen = clean_ai_output(gen)
         replace_message_keep_trailers(bufnr, gen)
         reflow_commit_message(bufnr)
         update_subject_indicator(bufnr)
