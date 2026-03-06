@@ -24,8 +24,9 @@ M.config = {
     { name = "Cursor",         line = "AI-assisted-by: Cursor" },
   },
   output_cleanup_patterns = {
-    "^```%w*$",     -- code fences (```python, ```text, etc.)
-    "^%s*END OF INPUT%s*$", -- END OF INPUT marker (whole-line match only)
+    "^```%w*$",                     -- code fences (```python, ```text, etc.)
+    "^%s*END OF INPUT%s*$",         -- END OF INPUT marker (whole-line match only)
+    "^%s*%*%*END OF INPUT%*%*%s*$", -- **END OF INPUT** marker
   },
   conventional_commits = {
     { type = "feat",     desc = "A new feature" },
