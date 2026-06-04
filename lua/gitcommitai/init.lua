@@ -417,7 +417,7 @@ local function is_amend_process()
 end
 
 local function get_staged_diff()
-	local cmd = { "git", "diff", "--cached", "--no-color" }
+	local cmd = { "git", "diff", "--ignore-spaces", "--cached", "--no-color" }
 
 	if is_amend_process() then
 		-- If amending, we want to see changes relative to the commit being amended (HEAD),
