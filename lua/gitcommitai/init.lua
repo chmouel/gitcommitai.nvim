@@ -1322,6 +1322,14 @@ local function toggle_verbose_diff(bufnr)
 	vim.notify("Inline verbose diff added", vim.log.levels.INFO)
 end
 
+local function open_staged_diffview()
+	if not pcall(require, "diffview") then
+		vim.notify("diffview.nvim is not installed", vim.log.levels.WARN)
+		return
+	end
+	vim.cmd("DiffviewOpen --cached")
+end
+
 local function setup_keymaps(bufnr)
 	local map = function(lhs, rhs, desc)
 		vim.keymap.set("n", lhs, rhs, {
@@ -1368,6 +1376,10 @@ local function setup_keymaps(bufnr)
 	map("<leader>agv", function()
 		toggle_verbose_diff(bufnr)
 	end, "Toggle inline verbose diff")
+
+	map("<leader>agD", function()
+		open_staged_diffview()
+	end, "Show staged diff in diffview")
 
 	map("<leader>aga", function()
 		vim.ui.select(M.config.trailers, {

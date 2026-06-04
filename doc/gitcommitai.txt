@@ -182,6 +182,11 @@ Press |<leader>agv| to toggle a commented staged diff preview inline in the
 commit buffer, similar to the context shown by `git commit -v`. The preview is
 commented out so it will not become part of the commit message.
 
+STAGED DIFF IN DIFFVIEW~
+
+Press |<leader>agD| to open the staged diff in diffview.nvim for a side-by-side
+view of the changes being committed. Requires diffview.nvim to be installed.
+
 CONVENTIONAL COMMITS~
 
 Press |<leader>agp| to:
@@ -224,6 +229,12 @@ The following keymaps are available in gitcommit buffers:
 
                                                             *gitcommitai-<leader>agv*
 <leader>agv         Toggle inline verbose diff
+
+                                                            *gitcommitai-<leader>agD*
+<leader>agD         Show staged diff in diffview.nvim
+                    Opens the staged changes in diffview.nvim for a
+                    side-by-side view. Requires diffview.nvim to be
+                    installed; shows a warning if not available.
 
                                                             *gitcommitai-<leader>agu*
 <leader>agu         Undo/restore previous message

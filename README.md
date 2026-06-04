@@ -172,6 +172,7 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 | `<leader>agh` | Generate commit with hint            |
 | `<leader>agm` | Regenerate with selected AI model    |
 | `<leader>agv` | Toggle inline verbose diff           |
+| `<leader>agD` | Show staged diff in diffview         |
 | `<leader>agu` | Undo/restore previous message        |
 | `<leader>agc` | Clear entire buffer                  |
 | `<leader>agd` | Delete commit message body           |
@@ -213,6 +214,13 @@ Press `<leader>agm` to regenerate using a one-off model selection:
 Press `<leader>agv` to toggle a commented staged diff preview inline in the
 commit buffer, similar to the context shown by `git commit -v`. The preview is
 commented out so it will not become part of the commit message.
+
+### Staged Diff in Diffview
+
+Press `<leader>agD` to open the staged diff in
+[diffview.nvim](https://github.com/sindrets/diffview.nvim) for a side-by-side
+view of the changes being committed. Requires diffview.nvim to be installed;
+shows a warning if it is not available.
 
 ### Adding Conventional Commit Type
 
