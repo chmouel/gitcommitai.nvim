@@ -26,6 +26,7 @@ Features:
   • Conventional commit type selection
   • Automatic ticket extraction from branch names
   • Smart text wrapping and formatting
+  • Configurable whitespace-only commit fallback
   • AI tool trailer management
   • Real-time subject line length indicator
   • Undo/redo support for message editing
@@ -108,6 +109,21 @@ Setup function:                                        *gitcommitai.setup()*
 
         • jira_uppercase (boolean): Convert ticket to uppercase
           Default: true
+
+        • max_input_length (number): Max characters sent to aichat
+          Default: 64000
+
+        • whitespace_only_commit_message (table|function): Message used when
+          staged changes only affect whitespace after ignoring spaces.
+          Table keys:
+            - enabled (boolean): Set false to use the normal AI path
+            - subject (string): Commit subject
+            - body (table|string): Commit body lines
+            - include_files (boolean): Include affected staged files
+            - files_heading (string): Heading before the file list
+            - max_files (number): Maximum listed files
+          Function form receives { files = {...}, file_count = n } and returns
+          either a string or a table of message lines.
 
         • trailers (table): AI tool trailers
           Default: {

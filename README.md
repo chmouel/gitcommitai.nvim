@@ -98,6 +98,21 @@ require("gitcommitai").setup({
   -- Max characters to send to AI (prevents sending massive diffs like lockfiles)
   max_input_length = 64000,
 
+  -- Message used when staged changes are whitespace-only after ignoring spaces
+  whitespace_only_commit_message = {
+    enabled = true,
+    subject = "style: apply whitespace-only formatting",
+    body = {
+      "Normalize formatting in the staged files without changing code behavior.",
+      "",
+      "The staged diff is empty after ignoring whitespace, so this commit only updates",
+      "spacing, indentation, or line wrapping.",
+    },
+    include_files = true,
+    files_heading = "Affected files:",
+    max_files = 20,
+  },
+
   -- AI tool trailers
   trailers = {
     { name = "Claude",         line = "Co-Authored-By: Claude <noreply@anthropic.com>" },
@@ -121,6 +136,29 @@ require("gitcommitai").setup({
     { type = "chore",    desc = "Other changes that don't modify src or test files" },
     { type = "revert",   desc = "Reverts a previous commit" },
   },
+})
+```
+
+You can also replace `whitespace_only_commit_message` with a function if you want
+full control over the generated lines:
+
+```lua
+require("gitcommitai").setup({
+  whitespace_only_commit_message = function(ctx)
+    local lines = {
+      "style: normalize formatting",
+      "",
+      ("Apply whitespace-only formatting updates across %d staged file(s)."):format(ctx.file_count),
+      "",
+      "Files:",
+    }
+
+    for _, file in ipairs(ctx.files) do
+      lines[#lines + 1] = "- " .. file
+    end
+
+    return lines
+  end,
 })
 ```
 

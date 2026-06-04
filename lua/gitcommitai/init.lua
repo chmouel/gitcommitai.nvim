@@ -16,6 +16,19 @@ M.config = {
 	jira_base_url = "https://issues.redhat.com/browse", -- Base URL for Jira tickets
 	jira_uppercase = true, -- Convert ticket to uppercase (srvkp-9991 -> SRVKP-9991)
 	max_input_length = 64000, -- Max characters to send to AI (approx 16k tokens)
+	whitespace_only_commit_message = {
+		enabled = true,
+		subject = "style: apply whitespace-only formatting",
+		body = {
+			"Normalize formatting in the staged files without changing code behavior.",
+			"",
+			"The staged diff is empty after ignoring whitespace, so this commit only updates",
+			"spacing, indentation, or line wrapping.",
+		},
+		include_files = true,
+		files_heading = "Affected files:",
+		max_files = 20,
+	},
 	trailers = {
 		{ name = "Claude", line = "Co-Authored-By: Claude <noreply@anthropic.com>" },
 		{ name = "GitHub Copilot", line = "AI-assisted-by: GitHub Copilot" },
@@ -61,6 +74,88 @@ local reflow_commit_message
 -- Helper functions (consolidated)
 local function is_blank(s)
 	return s:match("^%s*$") ~= nil
+end
+
+local function has_output(lines)
+	return lines and #lines > 0 and not (#lines == 1 and lines[1] == "")
+end
+
+local function normalize_message_lines(message)
+	if type(message) == "string" then
+		return vim.split(message, "\n", { plain = true })
+	end
+
+	if type(message) == "table" then
+		return vim.deepcopy(message)
+	end
+
+	return {}
+end
+
+local function get_staged_files()
+	local files = vim.fn.systemlist({ "git", "diff", "--cached", "--name-only" })
+	if vim.v.shell_error ~= 0 then
+		return {}
+	end
+
+	local result = {}
+	for _, file in ipairs(files) do
+		if file ~= "" then
+			result[#result + 1] = file
+		end
+	end
+
+	return result
+end
+
+local function build_whitespace_only_commit_message(context)
+	local config = M.config.whitespace_only_commit_message
+	if type(config) == "function" then
+		local lines = normalize_message_lines(config(context))
+		if #lines > 0 then
+			return lines
+		end
+		config = {}
+	end
+
+	config = config or {}
+	if config.enabled == false then
+		return nil
+	end
+
+	local lines = {}
+	local subject = config.subject or "style: reformat whitespace"
+
+	lines[#lines + 1] = subject
+
+	local body = normalize_message_lines(config.body or {})
+	if #body > 0 then
+		lines[#lines + 1] = ""
+		for _, line in ipairs(body) do
+			lines[#lines + 1] = line
+		end
+	end
+
+	if config.include_files ~= false and context.file_count > 0 then
+		if #lines > 0 and not is_blank(lines[#lines]) then
+			lines[#lines + 1] = ""
+		end
+
+		lines[#lines + 1] = config.files_heading or "Affected files:"
+
+		local max_files = math.max(math.floor(tonumber(config.max_files) or 20), 0)
+		local shown = math.min(context.file_count, max_files)
+		for i = 1, shown do
+			lines[#lines + 1] = "- " .. context.files[i]
+		end
+
+		local remaining = context.file_count - shown
+		if remaining > 0 then
+			lines[#lines + 1] = string.format("- ... and %d more files", remaining)
+		end
+	end
+
+	return lines
 end
 
 -- Remove lines matching output_cleanup_patterns from AI output
@@ -417,7 +512,8 @@ local function is_amend_process()
 end
 
 local function get_staged_diff()
-	local cmd = { "git", "diff", "--ignore-spaces", "--cached", "--no-color" }
+	local cmd = { "git", "diff", "--ignore-space-change", "--cached", "--no-color" }
+	local detect_whitespace_only = true
 
 	if is_amend_process() then
 		-- If amending, we want to see changes relative to the commit being amended (HEAD),
@@ -425,20 +521,33 @@ local function get_staged_diff()
 		-- If HEAD^ doesn't exist (amending root commit), we fall back to standard cached diff.
 		if vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
 			cmd = { "git", "diff", "--cached", "HEAD^", "--no-color" }
+			detect_whitespace_only = false
 			vim.notify("Detected git commit --amend, using full amend context", vim.log.levels.INFO)
 		end
 	end
 
 	local output = vim.fn.systemlist(cmd)
 	if vim.v.shell_error ~= 0 then
-		return {}
+		return {}, false
 	end
-	return output
+
+	if detect_whitespace_only and not has_output(output) then
+		local raw_output = vim.fn.systemlist({ "git", "diff", "--cached", "--no-color" })
+		if vim.v.shell_error == 0 and has_output(raw_output) then
+			local files = get_staged_files()
+			return output, {
+				files = files,
+				file_count = #files,
+			}
+		end
+	end
+
+	return output, nil
 end
 
 local function get_input_with_context(bufnr)
 	local lines = get_lines(bufnr)
-	local diff = get_staged_diff()
+	local diff, whitespace_only_context = get_staged_diff()
 	local buffer_content = table.concat(lines, "\n")
 	local is_amend = is_amend_process()
 	local input = buffer_content
@@ -451,7 +560,11 @@ local function get_input_with_context(bufnr)
 			.. "Please generate a new commit message."
 	end
 
-	if #diff > 0 then
+	if whitespace_only_context then
+		return input, build_whitespace_only_commit_message(whitespace_only_context)
+	end
+
+	if has_output(diff) then
 		local diff_str = table.concat(diff, "\n")
 		local combined_len = #input + #diff_str
 
@@ -471,7 +584,7 @@ local function get_input_with_context(bufnr)
 			input = input .. "\n\n# Diff (automatically added for context):\n" .. diff_str
 		end
 	end
-	return input
+	return input, nil
 end
 
 local function resolve_model(model)
@@ -563,11 +676,30 @@ local function replace_message_keep_trailers(bufnr, new_message_lines)
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, out)
 end
 
+local function apply_generated_message(bufnr, lines, replace)
+	if replace then
+		replace_message_keep_trailers(bufnr, lines)
+	else
+		vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, lines)
+	end
+
+	reflow_commit_message(bufnr)
+end
+
 local function generate_commit_async(bufnr, callback, opts)
 	opts = opts or {}
 	local replace = opts.replace or false
 	local model = resolve_model(opts.model)
-	local input = get_input_with_context(bufnr)
+	local input, fallback_message = get_input_with_context(bufnr)
+
+	if fallback_message then
+		apply_generated_message(bufnr, fallback_message, replace)
+		vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
+		if callback then
+			callback(true)
+		end
+		return
+	end
 
 	local cmd = {
 		"aichat",
@@ -592,13 +724,7 @@ local function generate_commit_async(bufnr, callback, opts)
 				local output = vim.split(obj.stdout, "\n", { trimempty = true })
 				output = clean_ai_output(output)
 
-				if replace then
-					replace_message_keep_trailers(bufnr, output)
-				else
-					vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
-				end
-
-				reflow_commit_message(bufnr)
+				apply_generated_message(bufnr, output, replace)
 				vim.notify("Commit message generated", vim.log.levels.INFO)
 				if callback then
 					callback(true)
@@ -617,13 +743,7 @@ local function generate_commit_async(bufnr, callback, opts)
 		end
 		output = clean_ai_output(output)
 
-		if replace then
-			replace_message_keep_trailers(bufnr, output)
-		else
-			vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, output)
-		end
-
-		reflow_commit_message(bufnr)
+		apply_generated_message(bufnr, output, replace)
 		if callback then
 			callback(true)
 		end
@@ -903,7 +1023,15 @@ local function regenerate_commit_message(bufnr, opts)
 	local model = resolve_model(opts.model)
 	save_for_undo(bufnr)
 
-	local input = get_input_with_context(bufnr)
+	local input, fallback_message = get_input_with_context(bufnr)
+
+	if fallback_message then
+		apply_generated_message(bufnr, fallback_message, true)
+		update_subject_indicator(bufnr)
+		vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
+		return
+	end
+
 	local cmd = { "aichat", "-m" .. model, "-r" .. M.config.role }
 
 	if vim.system then
@@ -918,8 +1046,7 @@ local function regenerate_commit_message(bufnr, opts)
 
 				local gen = vim.split(obj.stdout, "\n", { trimempty = true })
 				gen = clean_ai_output(gen)
-				replace_message_keep_trailers(bufnr, gen)
-				reflow_commit_message(bufnr)
+				apply_generated_message(bufnr, gen, true)
 				update_subject_indicator(bufnr)
 				vim.notify("Commit message regenerated", vim.log.levels.INFO)
 			end)
@@ -932,8 +1059,7 @@ local function regenerate_commit_message(bufnr, opts)
 			return
 		end
 		gen = clean_ai_output(gen)
-		replace_message_keep_trailers(bufnr, gen)
-		reflow_commit_message(bufnr)
+		apply_generated_message(bufnr, gen, true)
 		update_subject_indicator(bufnr)
 	end
 end
@@ -951,7 +1077,14 @@ local function generate_with_hint(bufnr, opts)
 
 		save_for_undo(bufnr)
 
-		local input = get_input_with_context(bufnr)
+		local input, fallback_message = get_input_with_context(bufnr)
+		if fallback_message then
+			apply_generated_message(bufnr, fallback_message, true)
+			update_subject_indicator(bufnr)
+			vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
+			return
+		end
+
 		local cmd = {
 			"aichat",
 			"-m" .. model,
@@ -971,8 +1104,7 @@ local function generate_with_hint(bufnr, opts)
 
 					local gen = vim.split(obj.stdout, "\n", { trimempty = true })
 					gen = clean_ai_output(gen)
-					replace_message_keep_trailers(bufnr, gen)
-					reflow_commit_message(bufnr)
+					apply_generated_message(bufnr, gen, true)
 					update_subject_indicator(bufnr)
 					vim.notify("Commit message generated with hint", vim.log.levels.INFO)
 				end)
@@ -985,8 +1117,7 @@ local function generate_with_hint(bufnr, opts)
 				return
 			end
 			gen = clean_ai_output(gen)
-			replace_message_keep_trailers(bufnr, gen)
-			reflow_commit_message(bufnr)
+			apply_generated_message(bufnr, gen, true)
 			update_subject_indicator(bufnr)
 		end
 	end)
