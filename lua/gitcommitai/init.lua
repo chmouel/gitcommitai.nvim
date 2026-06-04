@@ -1,4 +1,6 @@
 local TRAILER_RE = "^[%w%-]+:"
+local VERBOSE_DIFF_START = "# gitcommitai.nvim verbose diff start"
+local VERBOSE_DIFF_END = "# gitcommitai.nvim verbose diff end"
 
 -- Configuration
 local M = {}
@@ -220,6 +222,49 @@ local function split_comments(lines)
 		comments[#comments + 1] = lines[i]
 	end
 	return msg, comments
+end
+
+local function find_verbose_diff_block(lines)
+	local start_idx
+	for i, line in ipairs(lines) do
+		if line == VERBOSE_DIFF_START then
+			start_idx = i
+			break
+		end
+	end
+
+	if not start_idx then
+		return nil, nil
+	end
+
+	for i = start_idx + 1, #lines do
+		if lines[i] == VERBOSE_DIFF_END then
+			return start_idx, i
+		end
+	end
+
+	return start_idx, #lines
+end
+
+local function remove_verbose_diff_block(lines)
+	local start_idx, end_idx = find_verbose_diff_block(lines)
+	if not start_idx then
+		return lines, false
+	end
+
+	local out = {}
+	for i = 1, start_idx - 1 do
+		out[#out + 1] = lines[i]
+	end
+	for i = end_idx + 1, #lines do
+		out[#out + 1] = lines[i]
+	end
+
+	while #out > 0 and is_blank(out[#out]) do
+		out[#out] = nil
+	end
+
+	return out, true
 end
 
 local function scan_commit(lines)
@@ -545,8 +590,27 @@ local function get_staged_diff()
 	return output, nil
 end
 
+local function get_verbose_diff()
+	local cmd = { "git", "diff", "--cached", "--no-color" }
+
+	if is_amend_process() and vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
+		cmd = { "git", "diff", "--cached", "HEAD^", "--no-color" }
+	end
+
+	local output = vim.fn.systemlist(cmd)
+	if vim.v.shell_error ~= 0 then
+		return nil, "Failed to read staged diff"
+	end
+
+	if not has_output(output) then
+		return nil, "No staged diff to show"
+	end
+
+	return output, nil
+end
+
 local function get_input_with_context(bufnr)
-	local lines = get_lines(bufnr)
+	local lines = remove_verbose_diff_block(get_lines(bufnr))
 	local diff, whitespace_only_context = get_staged_diff()
 	local buffer_content = table.concat(lines, "\n")
 	local is_amend = is_amend_process()
@@ -1212,6 +1276,52 @@ local function insert_ticket_trailer(bufnr)
 	vim.notify("Added ticket: " .. ticket, vim.log.levels.INFO)
 end
 
+local function comment_diff_lines(diff)
+	local commented = {
+		VERBOSE_DIFF_START,
+		"# Changes to be committed:",
+		"#",
+	}
+
+	for _, line in ipairs(diff) do
+		if line == "" then
+			commented[#commented + 1] = "#"
+		else
+			commented[#commented + 1] = "# " .. line
+		end
+	end
+
+	commented[#commented + 1] = VERBOSE_DIFF_END
+	return commented
+end
+
+local function toggle_verbose_diff(bufnr)
+	local lines = get_lines(bufnr)
+	local cleaned, removed = remove_verbose_diff_block(lines)
+	if removed then
+		set_lines(bufnr, 0, -1, cleaned)
+		vim.notify("Inline verbose diff removed", vim.log.levels.INFO)
+		return
+	end
+
+	local diff, err = get_verbose_diff()
+	if not diff then
+		vim.notify(err, vim.log.levels.INFO)
+		return
+	end
+
+	local out = vim.deepcopy(lines)
+	if #out > 0 and not is_blank(out[#out]) then
+		out[#out + 1] = ""
+	end
+	for _, line in ipairs(comment_diff_lines(diff)) do
+		out[#out + 1] = line
+	end
+
+	set_lines(bufnr, 0, -1, out)
+	vim.notify("Inline verbose diff added", vim.log.levels.INFO)
+end
+
 local function setup_keymaps(bufnr)
 	local map = function(lhs, rhs, desc)
 		vim.keymap.set("n", lhs, rhs, {
@@ -1254,6 +1364,10 @@ local function setup_keymaps(bufnr)
 	map("<leader>agm", function()
 		regenerate_commit_message_with_selected_model(bufnr)
 	end, "Regenerate commit with another model")
+
+	map("<leader>agv", function()
+		toggle_verbose_diff(bufnr)
+	end, "Toggle inline verbose diff")
 
 	map("<leader>aga", function()
 		vim.ui.select(M.config.trailers, {

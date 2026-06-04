@@ -171,6 +171,7 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 | `<leader>agr` | Regenerate commit message with AI    |
 | `<leader>agh` | Generate commit with hint            |
 | `<leader>agm` | Regenerate with selected AI model    |
+| `<leader>agv` | Toggle inline verbose diff           |
 | `<leader>agu` | Undo/restore previous message        |
 | `<leader>agc` | Clear entire buffer                  |
 | `<leader>agd` | Delete commit message body           |
@@ -206,6 +207,12 @@ Press `<leader>agm` to regenerate using a one-off model selection:
 1. Press `<leader>agm`
 2. Pick a model from `aichat --list-models`
 3. The commit message is regenerated with the selected model (without changing your default `model` config)
+
+### Inline Verbose Diff
+
+Press `<leader>agv` to toggle a commented staged diff preview inline in the
+commit buffer, similar to the context shown by `git commit -v`. The preview is
+commented out so it will not become part of the commit message.
 
 ### Adding Conventional Commit Type
 

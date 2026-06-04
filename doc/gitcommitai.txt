@@ -176,6 +176,12 @@ REGENERATE WITH ANOTHER MODEL~
 Press |<leader>agm| to regenerate using a one-off model selection from
 `aichat --list-models`. This does not change your configured default model.
 
+INLINE VERBOSE DIFF~
+
+Press |<leader>agv| to toggle a commented staged diff preview inline in the
+commit buffer, similar to the context shown by `git commit -v`. The preview is
+commented out so it will not become part of the commit message.
+
 CONVENTIONAL COMMITS~
 
 Press |<leader>agp| to:
@@ -215,6 +221,9 @@ The following keymaps are available in gitcommit buffers:
 
                                                             *gitcommitai-<leader>agm*
 <leader>agm         Regenerate with selected AI model
+
+                                                            *gitcommitai-<leader>agv*
+<leader>agv         Toggle inline verbose diff
 
                                                             *gitcommitai-<leader>agu*
 <leader>agu         Undo/restore previous message
