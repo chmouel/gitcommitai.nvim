@@ -156,6 +156,27 @@ Example configuration:
 ================================================================================
 5. USAGE                                                     *gitcommitai-usage*
 
+COMMAND AND ACTION MENU~
+                                                            *gitcommitai-command*
+                                                            *:Gitcommitai*
+
+Every action is available through the buffer-local `:Gitcommitai` command:
+
+  • `:Gitcommitai` with no argument opens an interactive action menu.
+  • `:Gitcommitai {action}` runs an action directly, with <Tab> completion,
+    e.g. `:Gitcommitai regenerate`, `:Gitcommitai hint`, `:Gitcommitai cancel`.
+
+Press |<leader>agg| to open the same menu without typing the command.
+
+While a generation runs, an animated spinner is shown on the subject line and
+the success notification includes the model that produced the message, e.g.
+"Commit message generated (codex-blah)". Press |<leader>agx| or run
+`:Gitcommitai cancel` to abort an in-flight request.
+
+If `aichat` is not in `PATH`, or exits with an error, the plugin reports the
+actual failure (including the first line of stderr) instead of a generic
+message.
+
 AUTOMATIC GENERATION~
 
 When you run `git commit`, the plugin automatically:
@@ -165,7 +186,9 @@ When you run `git commit`, the plugin automatically:
 4. Formats and wraps the message body
 
 Set |gitcommitai.setup()| option `autocommit = false` to disable automatic
-generation and use manual keymaps only.
+generation and use manual keymaps only. When the buffer already has a message
+(and you are not amending), a one-time hint reminds you that |<leader>agr| or
+|:Gitcommitai| can regenerate it.
 
 MANUAL REGENERATION~
 
@@ -218,6 +241,9 @@ Real-time visual feedback on subject line length:
 
 The following keymaps are available in gitcommit buffers:
 
+                                                            *gitcommitai-<leader>agg*
+<leader>agg         Open the gitcommitai action menu
+
                                                             *gitcommitai-<leader>agr*
 <leader>agr         Regenerate commit message with AI
 
@@ -226,6 +252,9 @@ The following keymaps are available in gitcommit buffers:
 
                                                             *gitcommitai-<leader>agm*
 <leader>agm         Regenerate with selected AI model
+
+                                                            *gitcommitai-<leader>agx*
+<leader>agx         Cancel a running commit message generation
 
                                                             *gitcommitai-<leader>agv*
 <leader>agv         Toggle inline verbose diff

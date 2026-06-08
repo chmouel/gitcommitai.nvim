@@ -16,6 +16,10 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
   Real-time visual feedback on subject line length
 - **Smart Amend Detection**:
   Provide full context (original changes + new staged changes) when amending commits
+- **Discoverable Commands**:
+  Run any action from the `:Gitcommitai` command (with completion) or a
+  `<leader>agg` action menu, with a live spinner while the model runs and the
+  ability to cancel an in-flight request
 - **Undo/Redo**:
   Restore previous commit messages like emacs's gitcommit.
 
@@ -168,9 +172,11 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 
 | Keymap       | Description                          |
 |-------------|--------------------------------------|
+| `<leader>agg` | Open the gitcommitai action menu     |
 | `<leader>agr` | Regenerate commit message with AI    |
 | `<leader>agh` | Generate commit with hint            |
 | `<leader>agm` | Regenerate with selected AI model    |
+| `<leader>agx` | Cancel running generation            |
 | `<leader>agv` | Toggle inline verbose diff           |
 | `<leader>agD` | Show staged diff in diffview         |
 | `<leader>agu` | Undo/restore previous message        |
@@ -180,12 +186,39 @@ The plugin sets up the following keymaps in `COMMIT_EDITMSG` buffers:
 | `<leader>agp` | Apply conventional commit type       |
 | `<leader>aga` | Add AI or co-author trailer          |
 
+All actions are also available through the `:Gitcommitai` command (see below),
+so you don't have to memorize the keymaps.
+
 ## Usage
+
+### Command and Action Menu
+
+Every action is available through the `:Gitcommitai` command:
+
+- `:Gitcommitai` with no argument opens an interactive action menu.
+- `:Gitcommitai <action>` runs an action directly, with `<Tab>` completion
+  (e.g. `:Gitcommitai regenerate`, `:Gitcommitai hint`, `:Gitcommitai cancel`).
+
+You can also press `<leader>agg` to open the same action menu without typing the
+command.
+
+While a generation is running, an animated spinner is shown on the subject line
+and the resulting notification includes the model that produced the message
+(e.g. `Commit message generated (codex-blah)`). Press `<leader>agx` (or run
+`:Gitcommitai cancel`) to abort an in-flight request.
+
+If `aichat` is not found in `PATH`, or it exits with an error, the plugin
+surfaces the actual failure (including the first line of `aichat`'s stderr)
+instead of a generic message.
 
 ### Automatic Generation
 
 When you run `git commit`, the plugin automatically generates a commit message if the buffer is empty.
 Set `autocommit = false` to disable this behavior and use manual keymaps only.
+
+When the buffer already has a message (and you are not amending), generation is
+skipped and a one-time hint reminds you that `<leader>agr` / `:Gitcommitai` can
+regenerate it.
 
 ### Manual Regeneration
 
