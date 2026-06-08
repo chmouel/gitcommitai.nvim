@@ -62,7 +62,15 @@ M.config = {
 local state = {
 	last_message = nil, -- for undo
 	ns_id = nil, -- namespace for virtual text
+	active_job = nil, -- handle of the in-flight aichat job (for cancellation)
+	gen_bufnr = nil, -- buffer the active job is generating into
+	spinner_timer = nil, -- uv timer animating the spinner
+	spinner_index = 1, -- current frame of the spinner animation
+	hint_shown = {}, -- per-buffer flag so the "skipped" hint shows only once
 }
+
+local SPINNER_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local SPINNER_INTERVAL_MS = 100
 
 --- Setup function for plugin configuration
 ---@param opts table|nil Configuration options
@@ -376,9 +384,20 @@ local function extract_ticket_from_branch()
 end
 
 -- Subject line length indicator
-local function update_subject_indicator(bufnr)
+local function ensure_namespace()
 	if not state.ns_id then
 		state.ns_id = vim.api.nvim_create_namespace("gitcommit_subject")
+	end
+	return state.ns_id
+end
+
+local function update_subject_indicator(bufnr)
+	ensure_namespace()
+
+	-- While a generation is running the spinner owns the subject-line virtual
+	-- text; don't fight it with the length indicator.
+	if state.spinner_timer then
+		return
 	end
 
 	-- Clear all existing virtual text in namespace
@@ -424,6 +443,69 @@ local function setup_subject_indicator(bufnr)
 	})
 	-- Initial update
 	update_subject_indicator(bufnr)
+end
+
+-- Render the current spinner frame as virtual text on the subject line.
+local function render_spinner(bufnr, label)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
+	ensure_namespace()
+	vim.api.nvim_buf_clear_namespace(bufnr, state.ns_id, 0, -1)
+
+	local frame = SPINNER_FRAMES[state.spinner_index]
+	vim.api.nvim_buf_set_extmark(bufnr, state.ns_id, 0, 0, {
+		virt_text = { { string.format(" %s %s", frame, label), "DiagnosticHint" } },
+		virt_text_pos = "eol",
+	})
+end
+
+-- Start an animated spinner on the subject line of `bufnr`.
+local function start_spinner(bufnr, label)
+	local uv = vim.uv or vim.loop
+	label = label or "Generating commit message…"
+
+	state.spinner_index = 1
+	render_spinner(bufnr, label)
+
+	if state.spinner_timer then
+		return
+	end
+
+	local timer = uv.new_timer()
+	state.spinner_timer = timer
+	timer:start(
+		SPINNER_INTERVAL_MS,
+		SPINNER_INTERVAL_MS,
+		vim.schedule_wrap(function()
+			if not state.spinner_timer then
+				return
+			end
+			state.spinner_index = (state.spinner_index % #SPINNER_FRAMES) + 1
+			render_spinner(bufnr, label)
+		end)
+	)
+end
+
+-- Stop the spinner and restore the normal subject-length indicator.
+local function stop_spinner()
+	local timer = state.spinner_timer
+	if timer then
+		state.spinner_timer = nil
+		pcall(function()
+			timer:stop()
+			timer:close()
+		end)
+	end
+
+	local bufnr = state.gen_bufnr
+	if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+		if state.ns_id then
+			vim.api.nvim_buf_clear_namespace(bufnr, state.ns_id, 0, -1)
+		end
+		update_subject_indicator(bufnr)
+	end
 end
 
 local function is_git_commit_amend_args(args)
@@ -750,69 +832,196 @@ local function apply_generated_message(bufnr, lines, replace)
 	reflow_commit_message(bufnr)
 end
 
-local function generate_commit_async(bufnr, callback, opts)
+-- Extract a short, human-readable reason from an aichat failure.
+local function format_aichat_error(obj)
+	local function first_line(s)
+		if not s or s == "" then
+			return nil
+		end
+		for line in s:gmatch("[^\r\n]+") do
+			local t = trim(line)
+			if t ~= "" then
+				return t
+			end
+		end
+		return nil
+	end
+
+	local detail = first_line(obj and obj.stderr) or first_line(obj and obj.stdout)
+	local code = obj and obj.code or "?"
+
+	if detail then
+		return string.format("aichat failed (exit %s): %s", tostring(code), detail)
+	end
+	return string.format("aichat failed (exit %s) with no output", tostring(code))
+end
+
+-- True if aichat is callable; otherwise notifies an actionable error.
+local function ensure_aichat_available()
+	if vim.fn.executable("aichat") == 1 then
+		return true
+	end
+	vim.notify(
+		"aichat not found in PATH. Install it from https://github.com/sigoden/aichat",
+		vim.log.levels.ERROR
+	)
+	return false
+end
+
+-- True if a generation is already running; notifies the user if so.
+local function generation_in_progress()
+	if state.active_job then
+		vim.notify("A commit message generation is already in progress", vim.log.levels.WARN)
+		return true
+	end
+	return false
+end
+
+-- Cancel the in-flight generation, if any.
+local function cancel_generation(opts)
+	opts = opts or {}
+	local job = state.active_job
+	if not job then
+		if not opts.silent then
+			vim.notify("No commit message generation in progress", vim.log.levels.INFO)
+		end
+		return false
+	end
+
+	state.active_job = nil
+	pcall(function()
+		job:kill(15) -- SIGTERM
+	end)
+	stop_spinner()
+	state.gen_bufnr = nil
+
+	if not opts.silent then
+		vim.notify("Commit message generation cancelled", vim.log.levels.INFO)
+	end
+	return true
+end
+
+-- Unified async generation used by every entry point.
+--
+-- opts:
+--   replace        (boolean)  replace existing message instead of prepending
+--   model          (string)   model override
+--   cmd_extra      (table)    extra positional args appended to the aichat cmd
+--   progress_label (string)   spinner label
+--   success_msg    (string)   notification on success
+--   callback       (function) called with (success: boolean)
+local function run_generation(bufnr, opts)
 	opts = opts or {}
 	local replace = opts.replace or false
 	local model = resolve_model(opts.model)
+	local callback = opts.callback
+
+	local function finish(success)
+		if callback then
+			callback(success)
+		end
+	end
+
+	if generation_in_progress() then
+		finish(false)
+		return
+	end
+
 	local input, fallback_message = get_input_with_context(bufnr)
 
 	if fallback_message then
 		apply_generated_message(bufnr, fallback_message, replace)
+		update_subject_indicator(bufnr)
 		vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
-		if callback then
-			callback(true)
-		end
+		finish(true)
 		return
 	end
 
-	local cmd = {
-		"aichat",
-		"-m" .. model,
-		"-r" .. M.config.role,
-	}
+	if not ensure_aichat_available() then
+		finish(false)
+		return
+	end
 
-	-- Check if vim.system exists (Neovim 0.10+)
-	if vim.system then
-		vim.notify("Generating commit message...", vim.log.levels.INFO)
-
-		vim.system(cmd, { stdin = input }, function(obj)
-			vim.schedule(function()
-				if obj.code ~= 0 or not obj.stdout or obj.stdout == "" then
-					vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-					if callback then
-						callback(false)
-					end
-					return
-				end
-
-				local output = vim.split(obj.stdout, "\n", { trimempty = true })
-				output = clean_ai_output(output)
-
-				apply_generated_message(bufnr, output, replace)
-				vim.notify("Commit message generated", vim.log.levels.INFO)
-				if callback then
-					callback(true)
-				end
-			end)
-		end)
-	else
-		-- Fallback to sync for older Neovim
-		local output = vim.fn.systemlist(cmd, input)
-		if vim.v.shell_error ~= 0 or not output or #output == 0 then
-			vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-			if callback then
-				callback(false)
-			end
-			return
-		end
-		output = clean_ai_output(output)
-
-		apply_generated_message(bufnr, output, replace)
-		if callback then
-			callback(true)
+	local cmd = { "aichat", "-m" .. model, "-r" .. M.config.role }
+	if opts.cmd_extra then
+		for _, arg in ipairs(opts.cmd_extra) do
+			cmd[#cmd + 1] = arg
 		end
 	end
+
+	local success_msg = string.format("%s (%s)", opts.success_msg or "Commit message generated", model)
+
+	local function apply_output(lines)
+		lines = clean_ai_output(lines)
+		apply_generated_message(bufnr, lines, replace)
+		update_subject_indicator(bufnr)
+	end
+
+	-- Fallback to sync for older Neovim without vim.system.
+	if not vim.system then
+		local output = vim.fn.systemlist(cmd, input)
+		if vim.v.shell_error ~= 0 or not output or #output == 0 then
+			vim.notify(
+				string.format("aichat failed (exit %d) or returned no output", vim.v.shell_error),
+				vim.log.levels.ERROR
+			)
+			finish(false)
+			return
+		end
+		apply_output(output)
+		vim.notify(success_msg, vim.log.levels.INFO)
+		finish(true)
+		return
+	end
+
+	state.gen_bufnr = bufnr
+	start_spinner(bufnr, opts.progress_label or "Generating commit message…")
+
+	state.active_job = vim.system(cmd, { stdin = input, text = true }, function(obj)
+		vim.schedule(function()
+			-- A cancellation may have already cleared/replaced the job.
+			if state.active_job == nil and state.gen_bufnr == nil then
+				return
+			end
+			state.active_job = nil
+			state.gen_bufnr = nil
+			stop_spinner()
+
+			if not vim.api.nvim_buf_is_valid(bufnr) then
+				finish(false)
+				return
+			end
+
+			if obj.code ~= 0 then
+				vim.notify(format_aichat_error(obj), vim.log.levels.ERROR)
+				finish(false)
+				return
+			end
+
+			if not obj.stdout or obj.stdout == "" then
+				vim.notify("aichat returned an empty commit message", vim.log.levels.WARN)
+				finish(false)
+				return
+			end
+
+			apply_output(vim.split(obj.stdout, "\n", { trimempty = true }))
+			vim.notify(success_msg, vim.log.levels.INFO)
+			finish(true)
+		end)
+	end)
 end
+
+local function generate_commit_async(bufnr, callback, opts)
+	opts = opts or {}
+	run_generation(bufnr, {
+		replace = opts.replace or false,
+		model = opts.model,
+		progress_label = "Generating commit message…",
+		success_msg = "Commit message generated",
+		callback = callback,
+	})
+end
+
 
 local function wrap_body(bufnr, start_line, end_line)
 	if not start_line or not end_line or end_line < start_line then
@@ -1084,54 +1293,26 @@ end
 -- Async regenerate commit message
 local function regenerate_commit_message(bufnr, opts)
 	opts = opts or {}
-	local model = resolve_model(opts.model)
-	save_for_undo(bufnr)
-
-	local input, fallback_message = get_input_with_context(bufnr)
-
-	if fallback_message then
-		apply_generated_message(bufnr, fallback_message, true)
-		update_subject_indicator(bufnr)
-		vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
+	if generation_in_progress() then
 		return
 	end
+	save_for_undo(bufnr)
 
-	local cmd = { "aichat", "-m" .. model, "-r" .. M.config.role }
-
-	if vim.system then
-		vim.notify("Regenerating commit message...", vim.log.levels.INFO)
-
-		vim.system(cmd, { stdin = input }, function(obj)
-			vim.schedule(function()
-				if obj.code ~= 0 or not obj.stdout or obj.stdout == "" then
-					vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-					return
-				end
-
-				local gen = vim.split(obj.stdout, "\n", { trimempty = true })
-				gen = clean_ai_output(gen)
-				apply_generated_message(bufnr, gen, true)
-				update_subject_indicator(bufnr)
-				vim.notify("Commit message regenerated", vim.log.levels.INFO)
-			end)
-		end)
-	else
-		-- Fallback to sync
-		local gen = vim.fn.systemlist(cmd, input)
-		if vim.v.shell_error ~= 0 or not gen or #gen == 0 then
-			vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-			return
-		end
-		gen = clean_ai_output(gen)
-		apply_generated_message(bufnr, gen, true)
-		update_subject_indicator(bufnr)
-	end
+	run_generation(bufnr, {
+		replace = true,
+		model = opts.model,
+		progress_label = "Regenerating commit message…",
+		success_msg = "Commit message regenerated",
+	})
 end
 
 -- Generate commit message with user hint
 local function generate_with_hint(bufnr, opts)
 	opts = opts or {}
-	local model = resolve_model(opts.model)
+
+	if generation_in_progress() then
+		return
+	end
 
 	vim.ui.input({ prompt = "Commit focus/hint (optional): " }, function(hint)
 		if not hint or hint == "" then
@@ -1139,51 +1320,18 @@ local function generate_with_hint(bufnr, opts)
 			return
 		end
 
-		save_for_undo(bufnr)
-
-		local input, fallback_message = get_input_with_context(bufnr)
-		if fallback_message then
-			apply_generated_message(bufnr, fallback_message, true)
-			update_subject_indicator(bufnr)
-			vim.notify("Whitespace-only diff detected, using configured commit message", vim.log.levels.INFO)
+		if generation_in_progress() then
 			return
 		end
+		save_for_undo(bufnr)
 
-		local cmd = {
-			"aichat",
-			"-m" .. model,
-			"-r" .. M.config.role,
-			hint,
-		}
-
-		if vim.system then
-			vim.notify("Generating commit message with hint...", vim.log.levels.INFO)
-
-			vim.system(cmd, { stdin = input }, function(obj)
-				vim.schedule(function()
-					if obj.code ~= 0 or not obj.stdout or obj.stdout == "" then
-						vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-						return
-					end
-
-					local gen = vim.split(obj.stdout, "\n", { trimempty = true })
-					gen = clean_ai_output(gen)
-					apply_generated_message(bufnr, gen, true)
-					update_subject_indicator(bufnr)
-					vim.notify("Commit message generated with hint", vim.log.levels.INFO)
-				end)
-			end)
-		else
-			-- Fallback to sync
-			local gen = vim.fn.systemlist(cmd, input)
-			if vim.v.shell_error ~= 0 or not gen or #gen == 0 then
-				vim.notify("Failed to generate commit message via aichat", vim.log.levels.WARN)
-				return
-			end
-			gen = clean_ai_output(gen)
-			apply_generated_message(bufnr, gen, true)
-			update_subject_indicator(bufnr)
-		end
+		run_generation(bufnr, {
+			replace = true,
+			model = opts.model,
+			cmd_extra = { hint },
+			progress_label = "Generating commit message with hint…",
+			success_msg = "Commit message generated with hint",
+		})
 	end)
 end
 
@@ -1330,6 +1478,77 @@ local function open_staged_diffview()
 	vim.cmd("DiffviewOpen --cached")
 end
 
+local function clear_buffer(bufnr)
+	save_for_undo(bufnr)
+	set_lines(bufnr, 0, -1, {})
+end
+
+local function delete_message_body(bufnr)
+	save_for_undo(bufnr)
+	delete_message(bufnr)
+end
+
+local function add_trailer_interactive(bufnr)
+	vim.ui.select(M.config.trailers, {
+		prompt = "Choose AI tool for trailer:",
+		format_item = function(item)
+			return item.name
+		end,
+	}, function(choice)
+		if choice then
+			insert_trailer(bufnr, choice.line)
+		end
+	end)
+end
+
+-- Single source of truth for every user-facing action. The keymaps, the
+-- `:Gitcommitai` command (with completion), and the action menu are all derived
+-- from this list so they never drift apart.
+local actions = {
+	{ name = "regenerate", key = "agr", desc = "Regenerate commit message", fn = regenerate_commit_message },
+	{ name = "hint", key = "agh", desc = "Generate commit with hint", fn = generate_with_hint },
+	{ name = "model", key = "agm", desc = "Regenerate with another model", fn = regenerate_commit_message_with_selected_model },
+	{ name = "cancel", key = "agx", desc = "Cancel running generation", fn = function() cancel_generation() end },
+	{ name = "undo", key = "agu", desc = "Undo/restore previous message", fn = restore_previous_message },
+	{ name = "clear", key = "agc", desc = "Clear entire buffer", fn = clear_buffer },
+	{ name = "delete", key = "agd", desc = "Delete commit message body", fn = delete_message_body },
+	{ name = "ticket", key = "agt", desc = "Add ticket from branch name", fn = insert_ticket_trailer },
+	{ name = "conventional", key = "agp", desc = "Apply conventional commit type", fn = apply_conventional_commit },
+	{ name = "trailer", key = "aga", desc = "Add AI or co-author trailer", fn = add_trailer_interactive },
+	{ name = "verbose-diff", key = "agv", desc = "Toggle inline verbose diff", fn = toggle_verbose_diff },
+	{ name = "diffview", key = "agD", desc = "Show staged diff in diffview", fn = open_staged_diffview },
+}
+
+local actions_by_name = {}
+for _, action in ipairs(actions) do
+	actions_by_name[action.name] = action
+end
+
+-- Run an action by its name in the given buffer. Returns false if unknown.
+local function run_action(bufnr, name)
+	local action = actions_by_name[name]
+	if not action then
+		vim.notify("Unknown gitcommitai action: " .. tostring(name), vim.log.levels.ERROR)
+		return false
+	end
+	action.fn(bufnr)
+	return true
+end
+
+-- Open an interactive menu of every action.
+local function action_menu(bufnr)
+	vim.ui.select(actions, {
+		prompt = "gitcommitai action:",
+		format_item = function(item)
+			return string.format("%-13s %s", item.name, item.desc)
+		end,
+	}, function(choice)
+		if choice then
+			choice.fn(bufnr)
+		end
+	end)
+end
+
 local function setup_keymaps(bufnr)
 	local map = function(lhs, rhs, desc)
 		vim.keymap.set("n", lhs, rhs, {
@@ -1339,61 +1558,42 @@ local function setup_keymaps(bufnr)
 		})
 	end
 
-	map("<leader>agr", function()
-		regenerate_commit_message(bufnr)
-	end, "Regenerate commit message")
+	for _, action in ipairs(actions) do
+		map("<leader>" .. action.key, function()
+			action.fn(bufnr)
+		end, action.desc)
+	end
 
-	map("<leader>agu", function()
-		restore_previous_message(bufnr)
-	end, "Undo/restore previous message")
-
-	map("<leader>agc", function()
-		save_for_undo(bufnr)
-		set_lines(bufnr, 0, -1, {})
-	end, "Clear entire buffer")
-
-	map("<leader>agd", function()
-		save_for_undo(bufnr)
-		delete_message(bufnr)
-	end, "Delete commit message body")
-
-	map("<leader>agt", function()
-		insert_ticket_trailer(bufnr)
-	end, "Add ticket from branch name")
-
-	map("<leader>agp", function()
-		apply_conventional_commit(bufnr)
-	end, "Apply conventional commit type")
-
-	map("<leader>agh", function()
-		generate_with_hint(bufnr)
-	end, "Generate commit with hint")
-
-	map("<leader>agm", function()
-		regenerate_commit_message_with_selected_model(bufnr)
-	end, "Regenerate commit with another model")
-
-	map("<leader>agv", function()
-		toggle_verbose_diff(bufnr)
-	end, "Toggle inline verbose diff")
-
-	map("<leader>agD", function()
-		open_staged_diffview()
-	end, "Show staged diff in diffview")
-
-	map("<leader>aga", function()
-		vim.ui.select(M.config.trailers, {
-			prompt = "Choose AI tool for trailer:",
-			format_item = function(item)
-				return item.name
-			end,
-		}, function(choice)
-			if choice then
-				insert_trailer(bufnr, choice.line)
-			end
-		end)
-	end, "Add AI or co-author trailer")
+	map("<leader>agg", function()
+		action_menu(bufnr)
+	end, "Open gitcommitai action menu")
 end
+
+-- Register the buffer-local :Gitcommitai command. With no argument it opens the
+-- action menu; with an argument it runs that action. Supports completion.
+local function setup_command(bufnr)
+	vim.api.nvim_buf_create_user_command(bufnr, "Gitcommitai", function(opts)
+		local name = trim(opts.args or "")
+		if name == "" then
+			action_menu(bufnr)
+		else
+			run_action(bufnr, name)
+		end
+	end, {
+		nargs = "?",
+		desc = "Run a gitcommitai action (no arg opens the menu)",
+		complete = function(arg_lead)
+			local matches = {}
+			for _, action in ipairs(actions) do
+				if action.name:find(arg_lead, 1, true) == 1 then
+					matches[#matches + 1] = action.name
+				end
+			end
+			return matches
+		end,
+	})
+end
+
 
 vim.api.nvim_create_autocmd("BufEnter", {
 	pattern = "COMMIT_EDITMSG",
@@ -1403,7 +1603,20 @@ vim.api.nvim_create_autocmd("BufEnter", {
 
 		vim.bo[bufnr].filetype = "gitcommit"
 		setup_keymaps(bufnr)
+		setup_command(bufnr)
 		setup_subject_indicator(bufnr)
+
+		-- If the commit buffer goes away while a generation is running, cancel
+		-- it so we never write into a dead buffer.
+		vim.api.nvim_create_autocmd({ "BufUnload", "BufWipeout" }, {
+			buffer = bufnr,
+			callback = function()
+				if state.gen_bufnr == bufnr then
+					cancel_generation({ silent = true })
+				end
+				state.hint_shown[bufnr] = nil
+			end,
+		})
 
 		if not M.config.autocommit then
 			return
@@ -1414,6 +1627,13 @@ vim.api.nvim_create_autocmd("BufEnter", {
 		local is_amend = is_amend_process()
 
 		if scan.has_content and not is_amend then
+			if not state.hint_shown[bufnr] then
+				state.hint_shown[bufnr] = true
+				vim.notify(
+					"gitcommitai: existing message kept. Use <leader>agr or :Gitcommitai to regenerate.",
+					vim.log.levels.INFO
+				)
+			end
 			return
 		end
 
