@@ -1527,19 +1527,55 @@ local function strip_verbose_diff_on_write(bufnr)
 	end
 end
 
+-- True if `git diff --cached <base>` reports at least one changed file.
+local function cached_diff_has_files(base)
+	local cmd = { "git", "diff", "--cached", "--name-only" }
+	if base then
+		cmd[#cmd + 1] = base
+	end
+	local out = vim.fn.systemlist(cmd)
+	if vim.v.shell_error ~= 0 then
+		return false
+	end
+	for _, f in ipairs(out) do
+		if f ~= "" then
+			return true
+		end
+	end
+	return false
+end
+
+-- True if HEAD has a parent commit (i.e. HEAD^ resolves).
+local function head_has_parent()
+	vim.fn.systemlist({ "git", "rev-parse", "--verify", "--quiet", "HEAD^" })
+	return vim.v.shell_error == 0
+end
+
 local function open_staged_diffview()
 	if not pcall(require, "diffview") then
 		vim.notify("diffview.nvim is not installed", vim.log.levels.WARN)
 		return
 	end
 
-	-- When amending, the changes being committed are the index plus the changes
-	-- in the commit being amended, i.e. `git diff --cached HEAD^`. diffview's
-	-- `--cached <rev>` mirrors that. Fall back to plain `--cached` for the root
-	-- commit (no HEAD^), matching get_staged_diff/get_verbose_diff.
+	-- During `git commit --amend` the changes being committed are the index
+	-- compared against the *parent* of HEAD (`git diff --cached HEAD^`), because
+	-- HEAD itself is the commit being replaced. Plain `--cached` (index vs HEAD)
+	-- only shows changes staged *on top of* that commit, so for a plain reword
+	-- it is empty -- the "diffview shows nothing" bug.
+	--
+	-- Prefer the explicit amend detection (reliable when git launches the
+	-- editor). As a safety net, also switch to HEAD^ when `--cached` is empty
+	-- but `--cached HEAD^` is not, which covers amend cases the process check
+	-- might miss.
 	local cmd = "DiffviewOpen --cached"
-	if is_amend_process() and vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
-		cmd = "DiffviewOpen --cached HEAD^"
+
+	if head_has_parent() then
+		local amend = is_amend_process()
+		if amend or not cached_diff_has_files(nil) then
+			if cached_diff_has_files("HEAD^") then
+				cmd = "DiffviewOpen --cached HEAD^"
+			end
+		end
 	end
 
 	vim.cmd(cmd)
