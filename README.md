@@ -2,6 +2,8 @@
 
 AI-powered Git commit message generation and formatting plugin for Neovim.
 
+<img width="1735" height="1080" alt="image" src="https://github.com/user-attachments/assets/b8766eb7-60c1-42fa-8767-f3d8fdf5f557" />
+
 ## Features
 
 - **Use AI for commit generation**:
