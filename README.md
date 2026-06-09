@@ -246,9 +246,12 @@ Press `<leader>agm` to regenerate using a one-off model selection:
 
 ### Inline Verbose Diff
 
-Press `<leader>agv` to toggle a commented staged diff preview inline in the
-commit buffer, similar to the context shown by `git commit -v`. The preview is
-commented out so it will not become part of the commit message.
+Press `<leader>agv` to toggle an inline staged diff preview in the commit
+buffer. The preview is byte-for-byte identical to `git commit -v`: a scissors
+line (respecting `core.commentChar`) followed by the raw, uncommented diff. The
+diff is automatically stripped from the scissors line down right before the
+buffer is written, so it never becomes part of the commit message regardless of
+git's configured cleanup mode.
 
 ### Staged Diff in Diffview
 

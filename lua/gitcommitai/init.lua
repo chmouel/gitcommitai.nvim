@@ -1,6 +1,54 @@
 local TRAILER_RE = "^[%w%-]+:"
-local VERBOSE_DIFF_START = "# gitcommitai.nvim verbose diff start"
-local VERBOSE_DIFF_END = "# gitcommitai.nvim verbose diff end"
+
+-- Git's verbose diff is delimited by a "scissors" line. We reproduce it exactly
+-- so the inline preview is byte-for-byte identical to `git commit -v`.
+-- See wt-status.c (cut_line / scissors) in git.
+local SCISSORS_DASHES = string.rep("-", 24)
+local SCISSORS_BODY = SCISSORS_DASHES .. " >8 " .. SCISSORS_DASHES
+local SCISSORS_HELP_1 = "Do not modify or remove the line above."
+local SCISSORS_HELP_2 = "Everything below it will be ignored."
+
+-- Cache the configured comment char so repeated buffer scans stay cheap.
+local comment_char_cache
+
+-- Git's comment character (core.commentChar). Defaults to "#". A value of
+-- "auto" means git picks a char at runtime; we fall back to "#" for detection
+-- since that is what git uses unless the message already contains it.
+local function git_comment_char()
+	if comment_char_cache then
+		return comment_char_cache
+	end
+
+	local out = vim.fn.systemlist({ "git", "config", "--get", "core.commentChar" })
+	local cc = "#"
+	if vim.v.shell_error == 0 and out and out[1] then
+		local v = out[1]:gsub("%s+$", "")
+		if v ~= "" and v ~= "auto" then
+			cc = v
+		end
+	end
+
+	comment_char_cache = cc
+	return cc
+end
+
+-- The full scissors line for the current comment char, e.g.
+-- "# ------------------------ >8 ------------------------".
+local function scissors_line(cc)
+	cc = cc or git_comment_char()
+	return cc .. " " .. SCISSORS_BODY
+end
+
+-- True if `line` is a scissors cut line for the given comment char.
+local function is_scissors_line(line, cc)
+	cc = cc or git_comment_char()
+	if line == scissors_line(cc) then
+		return true
+	end
+	-- Be lenient about surrounding dashes/spacing but require the ">8" cut mark
+	-- right after the comment char so we never match ordinary comments.
+	return line:match("^" .. vim.pesc(cc) .. "%s+%-+%s+>8%s+%-+%s*$") ~= nil
+end
 
 -- Configuration
 local M = {}
@@ -232,39 +280,29 @@ local function split_comments(lines)
 	return msg, comments
 end
 
+-- Locate the scissors cut line. Everything from it to the end of the buffer is
+-- the verbose diff block (this mirrors git's scissors semantics). Returns the
+-- 1-based index of the scissors line, or nil when there is no block.
 local function find_verbose_diff_block(lines)
-	local start_idx
+	local cc = git_comment_char()
 	for i, line in ipairs(lines) do
-		if line == VERBOSE_DIFF_START then
-			start_idx = i
-			break
+		if is_scissors_line(line, cc) then
+			return i
 		end
 	end
-
-	if not start_idx then
-		return nil, nil
-	end
-
-	for i = start_idx + 1, #lines do
-		if lines[i] == VERBOSE_DIFF_END then
-			return start_idx, i
-		end
-	end
-
-	return start_idx, #lines
+	return nil
 end
 
+-- Strip the scissors line and everything below it. Returns the trimmed lines
+-- and a boolean indicating whether a block was removed.
 local function remove_verbose_diff_block(lines)
-	local start_idx, end_idx = find_verbose_diff_block(lines)
+	local start_idx = find_verbose_diff_block(lines)
 	if not start_idx then
 		return lines, false
 	end
 
 	local out = {}
 	for i = 1, start_idx - 1 do
-		out[#out + 1] = lines[i]
-	end
-	for i = end_idx + 1, #lines do
 		out[#out + 1] = lines[i]
 	end
 
@@ -1424,23 +1462,23 @@ local function insert_ticket_trailer(bufnr)
 	vim.notify("Added ticket: " .. ticket, vim.log.levels.INFO)
 end
 
-local function comment_diff_lines(diff)
-	local commented = {
-		VERBOSE_DIFF_START,
-		"# Changes to be committed:",
-		"#",
+-- Build the verbose diff block exactly like `git commit -v`: a scissors line
+-- and two help comments (respecting core.commentChar), followed by the raw,
+-- uncommented diff. The raw diff is safe because it is stripped before commit
+-- (see the BufWritePre hook) and before being sent to the AI.
+local function verbose_diff_lines(diff)
+	local cc = git_comment_char()
+	local out = {
+		scissors_line(cc),
+		cc .. " " .. SCISSORS_HELP_1,
+		cc .. " " .. SCISSORS_HELP_2,
 	}
 
 	for _, line in ipairs(diff) do
-		if line == "" then
-			commented[#commented + 1] = "#"
-		else
-			commented[#commented + 1] = "# " .. line
-		end
+		out[#out + 1] = line
 	end
 
-	commented[#commented + 1] = VERBOSE_DIFF_END
-	return commented
+	return out
 end
 
 local function toggle_verbose_diff(bufnr)
@@ -1462,12 +1500,31 @@ local function toggle_verbose_diff(bufnr)
 	if #out > 0 and not is_blank(out[#out]) then
 		out[#out + 1] = ""
 	end
-	for _, line in ipairs(comment_diff_lines(diff)) do
+	for _, line in ipairs(verbose_diff_lines(diff)) do
 		out[#out + 1] = line
 	end
 
 	set_lines(bufnr, 0, -1, out)
 	vim.notify("Inline verbose diff added", vim.log.levels.INFO)
+end
+
+-- Strip the scissors block (and trailing blanks) from the buffer in place.
+--
+-- The inline verbose diff is a *raw* diff, so unlike git's default `strip`
+-- cleanup it would otherwise leak into the commit message. We remove it right
+-- before the buffer is written so git only ever sees the message above the
+-- scissors line. This also harmlessly handles a scissors block that git itself
+-- added via `git commit -v`.
+local function strip_verbose_diff_on_write(bufnr)
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
+	local lines = get_lines(bufnr)
+	local cleaned, removed = remove_verbose_diff_block(lines)
+	if removed then
+		set_lines(bufnr, 0, -1, cleaned)
+	end
 end
 
 local function open_staged_diffview()
@@ -1615,6 +1672,17 @@ vim.api.nvim_create_autocmd("BufEnter", {
 					cancel_generation({ silent = true })
 				end
 				state.hint_shown[bufnr] = nil
+			end,
+		})
+
+		-- The inline verbose diff is a raw diff, so strip it (and any scissors
+		-- block git added via `commit -v`) before the buffer is saved. This
+		-- guarantees the diff never lands in the actual commit message,
+		-- regardless of git's configured cleanup mode.
+		vim.api.nvim_create_autocmd("BufWritePre", {
+			buffer = bufnr,
+			callback = function()
+				strip_verbose_diff_on_write(bufnr)
 			end,
 		})
 
