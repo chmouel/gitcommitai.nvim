@@ -1532,7 +1532,17 @@ local function open_staged_diffview()
 		vim.notify("diffview.nvim is not installed", vim.log.levels.WARN)
 		return
 	end
-	vim.cmd("DiffviewOpen --cached")
+
+	-- When amending, the changes being committed are the index plus the changes
+	-- in the commit being amended, i.e. `git diff --cached HEAD^`. diffview's
+	-- `--cached <rev>` mirrors that. Fall back to plain `--cached` for the root
+	-- commit (no HEAD^), matching get_staged_diff/get_verbose_diff.
+	local cmd = "DiffviewOpen --cached"
+	if is_amend_process() and vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
+		cmd = "DiffviewOpen --cached HEAD^"
+	end
+
+	vim.cmd(cmd)
 end
 
 local function clear_buffer(bufnr)
