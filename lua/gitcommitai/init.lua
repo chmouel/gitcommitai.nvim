@@ -676,17 +676,64 @@ local function is_amend_process()
 	return is_git_commit_amend_args(args)
 end
 
+-- True if `git diff --cached <base>` reports at least one changed file.
+local function cached_diff_has_files(base)
+	local cmd = { "git", "diff", "--cached", "--name-only" }
+	if base then
+		cmd[#cmd + 1] = base
+	end
+	local out = vim.fn.systemlist(cmd)
+	if vim.v.shell_error ~= 0 then
+		return false
+	end
+	for _, f in ipairs(out) do
+		if f ~= "" then
+			return true
+		end
+	end
+	return false
+end
+
+-- True if HEAD has a parent commit (i.e. HEAD^ resolves).
+local function head_has_parent()
+	vim.fn.systemlist({ "git", "rev-parse", "--verify", "--quiet", "HEAD^" })
+	return vim.v.shell_error == 0
+end
+
+-- Resolve the base rev for staged-diff commands. During `git commit --amend`
+-- the changes being committed are the index compared against HEAD's parent, so
+-- we return "HEAD^". Otherwise nil (diff the index against HEAD as usual).
+--
+-- Explicit amend detection is preferred (reliable when git launches the
+-- editor). As a safety net we also switch to HEAD^ when `--cached` is empty but
+-- `--cached HEAD^` is not, covering amend cases the process check might miss.
+-- Returns nil for a root commit (no HEAD^).
+local function resolve_cached_diff_base()
+	if not head_has_parent() then
+		return nil
+	end
+	if is_amend_process() or not cached_diff_has_files(nil) then
+		if cached_diff_has_files("HEAD^") then
+			return "HEAD^"
+		end
+	end
+	return nil
+end
+
 local function get_staged_diff()
 	local cmd = { "git", "diff", "--ignore-space-change", "--cached", "--no-color" }
 	local detect_whitespace_only = true
 
-	if is_amend_process() then
-		-- If amending, we want to see changes relative to the commit being amended (HEAD),
-		-- which means comparing the index against HEAD's parent (HEAD^).
-		-- If HEAD^ doesn't exist (amending root commit), we fall back to standard cached diff.
-		if vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
-			cmd = { "git", "diff", "--cached", "HEAD^", "--no-color" }
-			detect_whitespace_only = false
+	-- When amending, diff the index against HEAD's parent so we capture the full
+	-- amend context (HEAD itself is the commit being replaced). The whitespace-
+	-- only fallback only applies to the normal index-vs-HEAD path.
+	local base = resolve_cached_diff_base()
+	if base then
+		cmd = { "git", "diff", "--cached", base, "--no-color" }
+		detect_whitespace_only = false
+		-- Only announce amend when it was actually detected as a commit --amend,
+		-- not when the HEAD^ fallback kicked in for some other reason.
+		if is_amend_process() then
 			vim.notify("Detected git commit --amend, using full amend context", vim.log.levels.INFO)
 		end
 	end
@@ -711,10 +758,12 @@ local function get_staged_diff()
 end
 
 local function get_verbose_diff()
+	-- Mirror get_staged_diff: use HEAD^ as the base while amending so the inline
+	-- diff shows the full amend context instead of an empty `--cached` diff.
+	local base = resolve_cached_diff_base()
 	local cmd = { "git", "diff", "--cached", "--no-color" }
-
-	if is_amend_process() and vim.fn.system("git rev-parse --verify HEAD^ 2>/dev/null") ~= "" then
-		cmd = { "git", "diff", "--cached", "HEAD^", "--no-color" }
+	if base then
+		cmd = { "git", "diff", "--cached", base, "--no-color" }
 	end
 
 	local output = vim.fn.systemlist(cmd)
@@ -1527,30 +1576,6 @@ local function strip_verbose_diff_on_write(bufnr)
 	end
 end
 
--- True if `git diff --cached <base>` reports at least one changed file.
-local function cached_diff_has_files(base)
-	local cmd = { "git", "diff", "--cached", "--name-only" }
-	if base then
-		cmd[#cmd + 1] = base
-	end
-	local out = vim.fn.systemlist(cmd)
-	if vim.v.shell_error ~= 0 then
-		return false
-	end
-	for _, f in ipairs(out) do
-		if f ~= "" then
-			return true
-		end
-	end
-	return false
-end
-
--- True if HEAD has a parent commit (i.e. HEAD^ resolves).
-local function head_has_parent()
-	vim.fn.systemlist({ "git", "rev-parse", "--verify", "--quiet", "HEAD^" })
-	return vim.v.shell_error == 0
-end
-
 local function open_staged_diffview()
 	if not pcall(require, "diffview") then
 		vim.notify("diffview.nvim is not installed", vim.log.levels.WARN)
@@ -1558,26 +1583,12 @@ local function open_staged_diffview()
 	end
 
 	-- During `git commit --amend` the changes being committed are the index
-	-- compared against the *parent* of HEAD (`git diff --cached HEAD^`), because
-	-- HEAD itself is the commit being replaced. Plain `--cached` (index vs HEAD)
-	-- only shows changes staged *on top of* that commit, so for a plain reword
-	-- it is empty -- the "diffview shows nothing" bug.
-	--
-	-- Prefer the explicit amend detection (reliable when git launches the
-	-- editor). As a safety net, also switch to HEAD^ when `--cached` is empty
-	-- but `--cached HEAD^` is not, which covers amend cases the process check
-	-- might miss.
-	local cmd = "DiffviewOpen --cached"
-
-	if head_has_parent() then
-		local amend = is_amend_process()
-		if amend or not cached_diff_has_files(nil) then
-			if cached_diff_has_files("HEAD^") then
-				cmd = "DiffviewOpen --cached HEAD^"
-			end
-		end
-	end
-
+	-- compared against the parent of HEAD (`git diff --cached HEAD^`). Plain
+	-- `--cached` (index vs HEAD) only shows changes staged *on top of* that
+	-- commit, so for a plain reword it is empty -- the "diffview shows nothing"
+	-- bug. resolve_cached_diff_base() picks the right base.
+	local base = resolve_cached_diff_base()
+	local cmd = base and ("DiffviewOpen --cached " .. base) or "DiffviewOpen --cached"
 	vim.cmd(cmd)
 end
 
