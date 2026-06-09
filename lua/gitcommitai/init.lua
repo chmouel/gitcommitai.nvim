@@ -1486,7 +1486,7 @@ local function toggle_verbose_diff(bufnr)
 	local cleaned, removed = remove_verbose_diff_block(lines)
 	if removed then
 		set_lines(bufnr, 0, -1, cleaned)
-		vim.notify("Inline verbose diff removed", vim.log.levels.INFO)
+		vim.notify("Inline staged diff removed", vim.log.levels.INFO)
 		return
 	end
 
@@ -1505,7 +1505,7 @@ local function toggle_verbose_diff(bufnr)
 	end
 
 	set_lines(bufnr, 0, -1, out)
-	vim.notify("Inline verbose diff added", vim.log.levels.INFO)
+	vim.notify("Inline staged diff added", vim.log.levels.INFO)
 end
 
 -- Strip the scissors block (and trailing blanks) from the buffer in place.
@@ -1572,7 +1572,7 @@ local actions = {
 	{ name = "ticket", key = "agt", desc = "Add ticket from branch name", fn = insert_ticket_trailer },
 	{ name = "conventional", key = "agp", desc = "Apply conventional commit type", fn = apply_conventional_commit },
 	{ name = "trailer", key = "aga", desc = "Add AI or co-author trailer", fn = add_trailer_interactive },
-	{ name = "verbose-diff", key = "agv", desc = "Toggle inline verbose diff", fn = toggle_verbose_diff },
+	{ name = "inline-diff", key = "agv", desc = "Toggle inline staged diff", fn = toggle_verbose_diff },
 	{ name = "diffview", key = "agD", desc = "Show staged diff in diffview", fn = open_staged_diffview },
 }
 

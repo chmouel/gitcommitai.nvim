@@ -199,7 +199,7 @@ REGENERATE WITH ANOTHER MODEL~
 Press |<leader>agm| to regenerate using a one-off model selection from
 `aichat --list-models`. This does not change your configured default model.
 
-INLINE VERBOSE DIFF~
+INLINE STAGED DIFF~
 
 Press |<leader>agv| to toggle an inline staged diff preview in the commit
 buffer. The preview is byte-for-byte identical to `git commit -v`: a scissors
@@ -268,7 +268,7 @@ The following keymaps are available in gitcommit buffers:
 <leader>agx         Cancel a running commit message generation
 
                                                             *gitcommitai-<leader>agv*
-<leader>agv         Toggle inline verbose diff
+<leader>agv         Toggle inline staged diff
 
                                                             *gitcommitai-<leader>agD*
 <leader>agD         Show staged diff in diffview.nvim
