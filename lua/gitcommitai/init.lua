@@ -54,6 +54,7 @@ end
 local M = {}
 M.config = {
 	model = "gemini:gemini-3.1-flash-lite-preview",
+	models = { "gemini:gemini-3.1-flash-lite-preview" },
 	role = "gitcommit",
 	autocommit = true,
 	subject_warn_length = 50,
@@ -170,6 +171,7 @@ local state = {
 	gen_bufnr = nil, -- buffer the active job is generating into
 	spinner_timer = nil, -- uv timer animating the spinner
 	spinner_index = 1, -- current frame of the spinner animation
+	model_index = 1, -- current index in M.config.models
 	hint_shown = {}, -- per-buffer flag so the "skipped" hint shows only once
 }
 
@@ -1034,11 +1036,54 @@ local function get_input_with_context(bufnr)
 	return input, nil
 end
 
+local function configured_models()
+	local models = M.config.models
+	if type(models) ~= "table" or #models == 0 then
+		return nil
+	end
+
+	local result = {}
+	for _, model in ipairs(models) do
+		if type(model) == "string" and model ~= "" then
+			result[#result + 1] = model
+		end
+	end
+
+	if #result == 0 then
+		return nil
+	end
+
+	return result
+end
+
+local function current_configured_model()
+	local models = configured_models()
+	if not models then
+		return M.config.model
+	end
+
+	if state.model_index < 1 or state.model_index > #models then
+		state.model_index = 1
+	end
+
+	return models[state.model_index]
+end
+
+local function advance_configured_model()
+	local models = configured_models()
+	if not models then
+		return M.config.model
+	end
+
+	state.model_index = (state.model_index % #models) + 1
+	return models[state.model_index]
+end
+
 local function resolve_model(model)
 	if model and model ~= "" then
 		return model
 	end
-	return M.config.model
+	return current_configured_model()
 end
 
 local function list_aichat_models()
@@ -1062,10 +1107,11 @@ local function list_aichat_models()
 	end
 
 	table.sort(models, function(a, b)
-		if a == M.config.model then
+		local current_model = current_configured_model()
+		if a == current_model then
 			return true
 		end
-		if b == M.config.model then
+		if b == current_model then
 			return false
 		end
 		return a < b
@@ -1084,8 +1130,8 @@ local function select_aichat_model(callback)
 	vim.ui.select(models, {
 		prompt = "Choose AI model for this generation:",
 		format_item = function(item)
-			if item == M.config.model then
-				return item .. " (default)"
+			if item == current_configured_model() then
+				return item .. " (current)"
 			end
 			return item
 		end,
@@ -1207,6 +1253,7 @@ end
 -- opts:
 --   replace        (boolean)  replace existing message instead of prepending
 --   model          (string)   model override
+--   advance_model  (boolean)  advance configured model rotation before running
 --   cmd_extra      (table)    extra positional args appended to the aichat cmd
 --   progress_label (string)   spinner label
 --   success_msg    (string)   notification on success
@@ -1214,7 +1261,6 @@ end
 local function run_generation(bufnr, opts)
 	opts = opts or {}
 	local replace = opts.replace or false
-	local model = resolve_model(opts.model)
 	local callback = opts.callback
 
 	local function finish(success)
@@ -1243,6 +1289,15 @@ local function run_generation(bufnr, opts)
 		return
 	end
 
+	local model
+	if opts.model and opts.model ~= "" then
+		model = opts.model
+	elseif opts.advance_model then
+		model = advance_configured_model()
+	else
+		model = resolve_model(nil)
+	end
+
 	local cmd = { "aichat", "-m" .. model, "-r" .. M.config.role }
 	if opts.cmd_extra then
 		for _, arg in ipairs(opts.cmd_extra) do
@@ -1251,6 +1306,8 @@ local function run_generation(bufnr, opts)
 	end
 
 	local success_msg = string.format("%s (%s)", opts.success_msg or "Commit message generated", model)
+	local progress_label = string.format("%s (%s)", opts.progress_label or "Generating commit message…", model)
+	vim.notify(string.format("%s with %s", opts.progress_label or "Generating commit message…", model), vim.log.levels.INFO)
 
 	local function apply_output(lines)
 		lines = clean_ai_output(lines)
@@ -1276,7 +1333,7 @@ local function run_generation(bufnr, opts)
 	end
 
 	state.gen_bufnr = bufnr
-	start_spinner(bufnr, opts.progress_label or "Generating commit message…")
+	start_spinner(bufnr, progress_label)
 
 	state.active_job = vim.system(cmd, { stdin = input, text = true }, function(obj)
 		vim.schedule(function()
@@ -1602,6 +1659,7 @@ local function regenerate_commit_message(bufnr, opts)
 	run_generation(bufnr, {
 		replace = true,
 		model = opts.model,
+		advance_model = opts.model == nil,
 		progress_label = "Regenerating commit message…",
 		success_msg = "Commit message regenerated",
 	})
@@ -1629,6 +1687,7 @@ local function generate_with_hint(bufnr, opts)
 		run_generation(bufnr, {
 			replace = true,
 			model = opts.model,
+			advance_model = opts.model == nil,
 			cmd_extra = { hint },
 			progress_label = "Generating commit message with hint…",
 			success_msg = "Commit message generated with hint",

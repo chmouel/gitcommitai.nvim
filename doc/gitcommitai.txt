@@ -83,6 +83,11 @@ Setup function:                                        *gitcommitai.setup()*
         • model (string): aichat model to use
           Default: "gemini:gemini-3.1-flash-lite-preview"
 
+        • models (table): aichat models to rotate through. When non-empty,
+          this overrides model. Automatic generation uses the first entry;
+          manual regeneration advances to the next entry and wraps around.
+          Default: { "gemini:gemini-3.1-flash-lite-preview" }
+
         • role (string): aichat role name
           Default: "gitcommit"
 
@@ -178,9 +183,10 @@ Every action is available through the buffer-local `:Gitcommitai` command:
 
 Press |<leader>agg| to open the same menu without typing the command.
 
-While a generation runs, an animated spinner is shown on the subject line and
-the success notification includes the model that produced the message, e.g.
-"Commit message generated (codex-blah)". Press |<leader>agx| or run
+When generation starts, the plugin reports which model is being used. While a
+generation runs, an animated spinner is shown on the subject line with the model
+name, and the success notification includes the model that produced the message,
+e.g. "Commit message generated (codex-blah)". Press |<leader>agx| or run
 `:Gitcommitai cancel` to abort an in-flight request.
 
 If `aichat` is not in `PATH`, or exits with an error, the plugin reports the
@@ -203,11 +209,12 @@ generation and use manual keymaps only. When the buffer already has a message
 MANUAL REGENERATION~
 
 Press |<leader>agr| to regenerate the commit message while preserving trailers.
+When `models` has multiple entries, regeneration uses the next configured model.
 
 REGENERATE WITH ANOTHER MODEL~
 
 Press |<leader>agm| to regenerate using a one-off model selection from
-`aichat --list-models`. This does not change your configured default model.
+`aichat --list-models`. This does not change your configured model rotation.
 
 INLINE STAGED DIFF~
 

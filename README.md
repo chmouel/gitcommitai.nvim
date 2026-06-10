@@ -40,7 +40,7 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
   "chmouel/gitcommitai.nvim",
   ft = "gitcommit",
   opts = {
-    model = "gemini:gemini-3.1-flash-lite-preview",  -- aichat model to use
+    models = { "gemini:gemini-3.1-flash-lite-preview" },  -- aichat models to rotate
     role = "gitcommit",                       -- aichat role
   },
 }
@@ -54,7 +54,7 @@ use {
   ft = "gitcommit",
   config = function()
     require("gitcommitai").setup({
-      model = "gemini:gemini-3.1-flash-lite-preview",
+      models = { "gemini:gemini-3.1-flash-lite-preview" },
       role = "gitcommit",
     })
   end,
@@ -69,7 +69,7 @@ Plug 'chmouel/gitcommitai.nvim'
 " In your init.vim or init.lua:
 lua << EOF
 require("gitcommitai").setup({
-  model = "gemini:gemini-3.1-flash-lite-preview",
+  models = { "gemini:gemini-3.1-flash-lite-preview" },
   role = "gitcommit",
 })
 EOF
@@ -83,6 +83,7 @@ Here's the default configuration:
 require("gitcommitai").setup({
   -- AI model configuration
   model = "gemini:gemini-3.1-flash-lite-preview",
+  models = { "gemini:gemini-3.1-flash-lite-preview" },  -- Overrides model when non-empty
   role = "gitcommit",
   autocommit = true,  -- Auto-generate commit message on COMMIT_EDITMSG open
 
@@ -227,10 +228,11 @@ Every action is available through the `:Gitcommitai` command:
 You can also press `<leader>agg` to open the same action menu without typing the
 command.
 
-While a generation is running, an animated spinner is shown on the subject line
-and the resulting notification includes the model that produced the message
-(e.g. `Commit message generated (codex-blah)`). Press `<leader>agx` (or run
-`:Gitcommitai cancel`) to abort an in-flight request.
+When generation starts, the plugin notifies which model is being used. While a
+generation is running, an animated spinner is shown on the subject line with the
+model name, and the resulting notification includes the model that produced the
+message (e.g. `Commit message generated (codex-blah)`). Press `<leader>agx` (or
+run `:Gitcommitai cancel`) to abort an in-flight request.
 
 If `aichat` is not found in `PATH`, or it exits with an error, the plugin
 surfaces the actual failure (including the first line of `aichat`'s stderr)
@@ -248,6 +250,9 @@ regenerate it.
 ### Manual Regeneration
 
 Press `<leader>agr` to regenerate the commit message while preserving trailers.
+If `models` contains multiple entries, each manual regeneration advances to the
+next model in the array and wraps back to the first model at the end. Automatic
+generation uses the first configured model by default.
 
 ### Generating with a Hint
 
@@ -265,7 +270,7 @@ Press `<leader>agm` to regenerate using a one-off model selection:
 
 1. Press `<leader>agm`
 2. Pick a model from `aichat --list-models`
-3. The commit message is regenerated with the selected model (without changing your default `model` config)
+3. The commit message is regenerated with the selected model (without changing your configured `models` rotation)
 
 ### Inline Staged Diff
 
@@ -338,7 +343,7 @@ Example `~/.config/aichat/roles.yaml` entry:
 
 ## Tips
 
-1. **Customize AI Model**: Change the `model` option to use different AI providers supported by aichat (OpenAI, Claude, Gemini, etc.). Use a smaller model for faster responses like `gemini:gemini-3.1-flash-lite-preview`
+1. **Customize AI Models**: Set `models` to one or more aichat models. The first model is used by default and manual regeneration rotates to the next entry. If `models` is empty or unset, `model` is used as a fallback.
 2. **Ticket Patterns**: Adjust `ticket_patterns` to match your team's branch naming conventions
 3. **Jira URL**: Set `jira_base_url` to your organization's Jira instance
 4. **Custom Trailers**: Add your own AI tools or co-authors to the `trailers` list
