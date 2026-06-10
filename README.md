@@ -6,24 +6,14 @@ AI-powered Git commit message generation and formatting plugin for Neovim.
 
 ## Features
 
-- **Use AI for commit generation**:
-  Automatically generates conventional commit messages using AI (via [aichat](https://github.com/sigoden/aichat))
-- **Conventional Commits**:
-  Let you easily choose conventional commit types (feat, fix, docs, etc.)
-- **Smart Formatting**:
-  Automatic wrapping and reflowing of commit message body
-- **AI Tool Trailers**:
-  Add co-author and AI-assisted-by trailers
-- **Subject Line Length Indicator**:
-  Real-time visual feedback on subject line length
-- **Smart Amend Detection**:
-  Provide full context (original changes + new staged changes) when amending commits
-- **Discoverable Commands**:
-  Run any action from the `:Gitcommitai` command (with completion) or a
-  `<leader>agg` action menu, with a live spinner while the model runs and the
-  ability to cancel an in-flight request
-- **Undo/Redo**:
-  Restore previous commit messages like emacs's gitcommit.
+- Generates conventional commit messages using AI (via [aichat](https://github.com/sigoden/aichat))
+- Pick conventional commit types (feat, fix, docs, etc.) from a menu
+- Wraps and reflows commit message body at 72 characters
+- Adds co-author and AI-assisted-by trailers
+- Real-time subject line length indicator
+- Detects amend commits and provides full context (original + new staged changes)
+- All actions available from `:Gitcommitai` command or `<leader>agg` menu, with a live spinner and cancel support
+- Undo/redo previous commit messages (like emacs gitcommit)
 
 ## Requirements
 
@@ -77,7 +67,7 @@ EOF
 
 ## Configuration
 
-Here's the default configuration:
+Default configuration:
 
 ```lua
 require("gitcommitai").setup({
@@ -260,9 +250,6 @@ Press `<leader>agh` to regenerate the commit message with a specific focus or co
 
 1. Press `<leader>agh`
 2. Enter a hint describing what to emphasize (e.g., "focus on the API changes", "this is a breaking change", "mention the performance improvement")
-3. The AI will generate a commit message that incorporates your hint
-
-This is useful when you want to guide the AI to emphasize specific aspects of your changes.
 
 ### Regenerating with Another Model
 
@@ -297,10 +284,10 @@ shows a warning if it is not available.
 
 ### Adding Ticket References
 
-Press `<leader>agt` to automatically extract and add a ticket reference from your branch name:
+Press `<leader>agt` to extract and add a ticket reference from your branch name:
 
-- Branch: `feature/JIRA-1234-add-feature` → Adds `Jira: https://issues.redhat.com/browse/JIRA-1234`
-- Branch: `fix/#123-bug-fix` → Adds `Fixes: #123`
+- Branch: `feature/JIRA-1234-add-feature` adds `Jira: https://issues.redhat.com/browse/JIRA-1234`
+- Branch: `fix/#123-bug-fix` adds `Fixes: #123`
 
 ### Adding AI Trailers
 
@@ -343,25 +330,19 @@ Example `~/.config/aichat/roles.yaml` entry:
 
 ## Tips
 
-1. **Customize AI Models**: Set `models` to one or more aichat models. The first model is used by default and manual regeneration rotates to the next entry. If `models` is empty or unset, `model` is used as a fallback.
-2. **Ticket Patterns**: Adjust `ticket_patterns` to match your team's branch naming conventions
-3. **Jira URL**: Set `jira_base_url` to your organization's Jira instance
-4. **Custom Trailers**: Add your own AI tools or co-authors to the `trailers` list
-5. **Diff Processing Optimization**: Configure `llm_diff` to prioritize documentation changes at the top of the diff, and omit massive dependency files (like Go `vendor/` or Node `node_modules/`) so only their filenames are listed in the context. Diffs sent to the LLM use `--ignore-all-space`, with conservative fallback detection so whitespace-sensitive changes remain visible.
+1. Set `models` to one or more aichat models. The first model is used by default and manual regeneration rotates through the list. If `models` is empty or unset, `model` is used as a fallback.
+2. Adjust `ticket_patterns` to match your team's branch naming conventions.
+3. Set `jira_base_url` to your organization's Jira instance.
+4. Add your own AI tools or co-authors to the `trailers` list.
+5. Configure `llm_diff` to prioritize documentation changes at the top of the diff and omit dependency directories (Go `vendor/`, Node `node_modules/`) so only filenames are listed. Diffs sent to the LLM use `--ignore-all-space`, with fallback detection so whitespace-sensitive changes stay visible.
 
 ## How It Works
 
-1. **Automatic Detection**: On opening `COMMIT_EDITMSG`, the plugin checks if there's existing content
-2. **AI Generation**: If empty, it sends the git diff and status to aichat for message generation
-3. **Smart Formatting**: The plugin automatically wraps text at 72 characters while preserving:
-   - List item formatting (bullets and numbers)
-   - Indentation
-   - Hard line breaks (lines ending with double spaces)
-4. **Trailer Management**: Git trailers are preserved when regenerating or editing messages
-5. **Amend Strategy**: When amending a commit (`git commit --amend`), the plugin detects this state and:
-   - Fetches the diff relative to the *parent* of the current commit (HEAD^) to capture the full context of the change.
-   - Includes the existing commit message in the prompt.
-   - Instructs the AI to generate a new message based on the combined context.
+1. On opening `COMMIT_EDITMSG`, the plugin checks if there's existing content.
+2. If the buffer is empty, it sends the git diff and status to aichat for message generation.
+3. Text is wrapped at 72 characters while preserving list formatting, indentation, and hard line breaks.
+4. Git trailers are preserved when regenerating or editing messages.
+5. When amending (`git commit --amend`), the plugin fetches the diff relative to HEAD^ to capture the full change, includes the existing commit message, and asks the AI to regenerate from the combined context.
 
 ## License
 
@@ -369,4 +350,4 @@ Apache License 2.0
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome.
