@@ -113,6 +113,16 @@ Setup function:                                        *gitcommitai.setup()*
         • max_input_length (number): Max characters sent to aichat
           Default: 64000
 
+		• llm_diff (table): Configuration for how git diff is processed
+		  and sent to the LLM.
+		  LLM diffs ignore all spaces while keeping whitespace-sensitive
+		  changes visible instead of treating them as formatting-only.
+		  Keys:
+            - doc_patterns (table): Lua patterns for files to show first.
+            - dependency_patterns (table): Lua patterns for heavy dependency
+              files/directories to omit from detailed diffs.
+            - omitted_files_heading (string): Heading for the omitted files list.
+
         • whitespace_only_commit_message (table|function): Message used when
           staged changes only affect whitespace after ignoring spaces.
           Table keys:

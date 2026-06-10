@@ -104,6 +104,29 @@ require("gitcommitai").setup({
   -- Max characters to send to AI (prevents sending massive diffs like lockfiles)
   max_input_length = 64000,
 
+  -- Configuration for how git diff is processed and sent to the LLM
+  llm_diff = {
+    -- Documentation changes often explain the intent, so show them first.
+    -- Bare doc names are anchored to the basename so "src/license_manager.go"
+    -- is not treated as a doc; only files like "LICENSE" or "docs/LICENSE.md".
+    doc_patterns = {
+      "%.md$", "%.mdx$", "%.markdown$", "%.rst$", "%.adoc$",
+      "^readme$", "^readme%.", "/readme$", "/readme%.",
+      "^changelog$", "^changelog%.", "/changelog$", "/changelog%.",
+      "^contributing$", "^contributing%.", "/contributing$", "/contributing%.",
+      "^license$", "^license%.", "/license$", "/license%.",
+      "^notice$", "^notice%.", "/notice$", "/notice%.",
+      "^doc/", "^docs/", "/doc/", "/docs/",
+    },
+    -- Heavy dependency files/directories are omitted from the diff and listed by name instead
+    dependency_patterns = {
+      "^vendor/", "/vendor/", "^node_modules/", "/node_modules/", "^%.venv/", "/%.venv/",
+      "^venv/", "/venv/", "^third_party/", "/third_party/", "^pods/", "/pods/",
+      "^%.terraform/", "/%.terraform/", "^bower_components/", "/bower_components/",
+    },
+    omitted_files_heading = "Dependency files changed (diffs omitted):",
+  },
+
   -- Message used when staged changes are whitespace-only after ignoring spaces
   whitespace_only_commit_message = {
     enabled = true,
@@ -319,6 +342,7 @@ Example `~/.config/aichat/roles.yaml` entry:
 2. **Ticket Patterns**: Adjust `ticket_patterns` to match your team's branch naming conventions
 3. **Jira URL**: Set `jira_base_url` to your organization's Jira instance
 4. **Custom Trailers**: Add your own AI tools or co-authors to the `trailers` list
+5. **Diff Processing Optimization**: Configure `llm_diff` to prioritize documentation changes at the top of the diff, and omit massive dependency files (like Go `vendor/` or Node `node_modules/`) so only their filenames are listed in the context. Diffs sent to the LLM use `--ignore-all-space`, with conservative fallback detection so whitespace-sensitive changes remain visible.
 
 ## How It Works
 

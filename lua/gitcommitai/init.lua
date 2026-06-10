@@ -66,6 +66,62 @@ M.config = {
 	jira_base_url = "https://issues.redhat.com/browse", -- Base URL for Jira tickets
 	jira_uppercase = true, -- Convert ticket to uppercase (srvkp-9991 -> SRVKP-9991)
 	max_input_length = 64000, -- Max characters to send to AI (approx 16k tokens)
+	llm_diff = {
+		-- Patterns are Lua patterns matched against the lowercased file path.
+		-- Bare doc names are anchored so they match a whole basename (optionally
+		-- with an extension) and never a longer name: e.g. "license" matches
+		-- "LICENSE" and "docs/LICENSE.md" but not "src/license_manager.go".
+		doc_patterns = {
+			"%.md$",
+			"%.mdx$",
+			"%.markdown$",
+			"%.rst$",
+			"%.adoc$",
+			"^readme$",
+			"^readme%.",
+			"/readme$",
+			"/readme%.",
+			"^changelog$",
+			"^changelog%.",
+			"/changelog$",
+			"/changelog%.",
+			"^contributing$",
+			"^contributing%.",
+			"/contributing$",
+			"/contributing%.",
+			"^license$",
+			"^license%.",
+			"/license$",
+			"/license%.",
+			"^notice$",
+			"^notice%.",
+			"/notice$",
+			"/notice%.",
+			"^doc/",
+			"^docs/",
+			"/doc/",
+			"/docs/",
+		},
+		dependency_patterns = {
+			"^vendor/",
+			"/vendor/",
+			"^node_modules/",
+			"/node_modules/",
+			"^%.venv/",
+			"/%.venv/",
+			"^venv/",
+			"/venv/",
+			"^third_party/",
+			"/third_party/",
+			"^pods/",
+			"/pods/",
+			"^%.terraform/",
+			"/%.terraform/",
+			"^bower_components/",
+			"/bower_components/",
+		},
+		omitted_files_heading = "Dependency files changed (diffs omitted):",
+	},
 	whitespace_only_commit_message = {
 		enabled = true,
 		subject = "style: apply whitespace-only formatting",
@@ -150,20 +206,186 @@ local function normalize_message_lines(message)
 	return {}
 end
 
-local function get_staged_files()
-	local files = vim.fn.systemlist({ "git", "diff", "--cached", "--name-only" })
+local function is_doc_file(filename)
+	local lower = filename:lower()
+	local patterns = M.config.llm_diff and M.config.llm_diff.doc_patterns or {}
+	for _, pat in ipairs(patterns) do
+		if lower:match(pat) then
+			return true
+		end
+	end
+	return false
+end
+
+local function is_heavy_dependency_file(filename)
+	local lower = filename:lower()
+	local patterns = M.config.llm_diff and M.config.llm_diff.dependency_patterns or {}
+	for _, pat in ipairs(patterns) do
+		if lower:match(pat) then
+			return true
+		end
+	end
+	return false
+end
+
+local function get_staged_files(base)
+	local cmd = { "git", "diff", "--cached", "--name-only", "-z" }
+	if base then
+		cmd[#cmd + 1] = base
+	end
+
+	local files = vim.fn.system(cmd)
 	if vim.v.shell_error ~= 0 then
 		return {}
 	end
 
 	local result = {}
-	for _, file in ipairs(files) do
-		if file ~= "" then
-			result[#result + 1] = file
+	-- vim.fn.system() represents NUL bytes in command output as SOH (\001),
+	-- so split on both to keep -z parsing correct inside Neovim.
+	local nul = string.char(0)
+	local soh = string.char(1)
+	local function next_separator_pos(s, offset)
+		local nul_pos = s:find(nul, offset, true)
+		local soh_pos = s:find(soh, offset, true)
+		if nul_pos and soh_pos then
+			return math.min(nul_pos, soh_pos)
 		end
+		return nul_pos or soh_pos
+	end
+
+	local start = 1
+	while true do
+		local pos = next_separator_pos(files, start)
+		if not pos then
+			local tail = files:sub(start)
+			if tail ~= "" then
+				result[#result + 1] = tail
+			end
+			break
+		end
+
+		if pos > start then
+			result[#result + 1] = files:sub(start, pos - 1)
+		end
+		start = pos + 1
 	end
 
 	return result
+end
+
+local function cached_file_diff(base, file, whitespace_mode)
+	local cmd = { "git", "diff", "--cached", "--no-color" }
+	if whitespace_mode == "all" then
+		cmd[#cmd + 1] = "--ignore-all-space"
+	elseif whitespace_mode == "change" then
+		cmd[#cmd + 1] = "--ignore-space-change"
+	end
+	if base then
+		cmd[#cmd + 1] = base
+	end
+	cmd[#cmd + 1] = "--"
+	cmd[#cmd + 1] = file
+
+	local output = vim.fn.systemlist(cmd)
+	if vim.v.shell_error ~= 0 then
+		return nil
+	end
+	return output
+end
+
+local function append_lines(target, source)
+	for _, line in ipairs(source) do
+		target[#target + 1] = line
+	end
+end
+
+local function file_diff_for_llm(base, file)
+	local ignored_all = cached_file_diff(base, file, "all")
+	if not ignored_all then
+		return nil, false
+	end
+	if has_output(ignored_all) then
+		return ignored_all, false
+	end
+
+	-- If ignoring all space hides the entire change, fall back to the previous
+	-- whitespace behavior before deciding this is a formatting-only file. This
+	-- keeps changes like "foo bar" -> "foobar" visible to the model.
+	local ignored_space_change = cached_file_diff(base, file, "change")
+	if not ignored_space_change then
+		return nil, false
+	end
+	if has_output(ignored_space_change) then
+		return ignored_space_change, false
+	end
+
+	local raw = cached_file_diff(base, file, nil)
+	if not raw then
+		return nil, false
+	end
+	return {}, has_output(raw)
+end
+
+local function build_llm_diff(base, files, detect_whitespace_only)
+	local doc_files = {}
+	local regular_files = {}
+	local dep_files = {}
+
+	for _, file in ipairs(files) do
+		if is_heavy_dependency_file(file) then
+			dep_files[#dep_files + 1] = file
+		elseif is_doc_file(file) then
+			doc_files[#doc_files + 1] = file
+		else
+			regular_files[#regular_files + 1] = file
+		end
+	end
+
+	local out = {}
+	local whitespace_only_files = {}
+	local function add_file_diff(file)
+		local diff, whitespace_only = file_diff_for_llm(base, file)
+		if not diff then
+			return false
+		end
+		if whitespace_only then
+			whitespace_only_files[#whitespace_only_files + 1] = file
+		elseif has_output(diff) then
+			append_lines(out, diff)
+		end
+		return true
+	end
+
+	for _, file in ipairs(doc_files) do
+		if not add_file_diff(file) then
+			return nil, nil
+		end
+	end
+	for _, file in ipairs(regular_files) do
+		if not add_file_diff(file) then
+			return nil, nil
+		end
+	end
+
+	if #dep_files > 0 then
+		if #out > 0 then
+			out[#out + 1] = ""
+		end
+		local heading = (M.config.llm_diff and M.config.llm_diff.omitted_files_heading) or "Dependency files changed (diffs omitted):"
+		out[#out + 1] = "# " .. heading
+		for _, file in ipairs(dep_files) do
+			out[#out + 1] = "# - " .. file
+		end
+	end
+
+	if detect_whitespace_only and #out == 0 and #dep_files == 0 and #whitespace_only_files > 0 then
+		return out, {
+			files = whitespace_only_files,
+			file_count = #whitespace_only_files,
+		}
+	end
+
+	return out, nil
 end
 
 local function build_whitespace_only_commit_message(context)
@@ -721,7 +943,6 @@ local function resolve_cached_diff_base()
 end
 
 local function get_staged_diff()
-	local cmd = { "git", "diff", "--ignore-space-change", "--cached", "--no-color" }
 	local detect_whitespace_only = true
 
 	-- When amending, diff the index against HEAD's parent so we capture the full
@@ -729,7 +950,6 @@ local function get_staged_diff()
 	-- only fallback only applies to the normal index-vs-HEAD path.
 	local base = resolve_cached_diff_base()
 	if base then
-		cmd = { "git", "diff", "--cached", base, "--no-color" }
 		detect_whitespace_only = false
 		-- Only announce amend when it was actually detected as a commit --amend,
 		-- not when the HEAD^ fallback kicked in for some other reason.
@@ -738,23 +958,17 @@ local function get_staged_diff()
 		end
 	end
 
-	local output = vim.fn.systemlist(cmd)
-	if vim.v.shell_error ~= 0 then
+	local files = get_staged_files(base)
+	if #files == 0 then
 		return {}, false
 	end
 
-	if detect_whitespace_only and not has_output(output) then
-		local raw_output = vim.fn.systemlist({ "git", "diff", "--cached", "--no-color" })
-		if vim.v.shell_error == 0 and has_output(raw_output) then
-			local files = get_staged_files()
-			return output, {
-				files = files,
-				file_count = #files,
-			}
-		end
+	local output, whitespace_only_context = build_llm_diff(base, files, detect_whitespace_only)
+	if not output then
+		return {}, false
 	end
 
-	return output, nil
+	return output, whitespace_only_context
 end
 
 local function get_verbose_diff()
